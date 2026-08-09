@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PTCGPB 플러그인 사용법</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #f4f5f7;
+    --fg: #1c1f26;
+    --fg-muted: #5b6270;
+    --accent: #3a6ff7;
+    --border: #dfe3ea;
+    --code-bg: #f0f2f6;
+    --table-head: #eef1f6;
+    --warn-bg: #fff4e5;
+    --warn-border: #f0b95a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161c;
+      --bg-alt: #1b1e26;
+      --fg: #e6e8ee;
+      --fg-muted: #9aa1b0;
+      --accent: #7aa2ff;
+      --border: #2c303b;
+      --code-bg: #1f2330;
+      --table-head: #232734;
+      --warn-bg: #2b2412;
+      --warn-border: #a87a2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    line-height: 1.65;
+  }
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin: 0 0 8px;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 12px;
+  }
+  h2 {
+    font-size: 1.25rem;
+    margin: 40px 0 14px;
+    color: var(--accent);
+  }
+  p { color: var(--fg); }
+  code {
+    font-family: "Cascadia Code", Consolas, "D2Coding", monospace;
+    background: var(--code-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--table-head); }
+  ul, ol { padding-left: 1.4em; }
+  li { margin: 6px 0; }
+  .note {
+    background: var(--warn-bg);
+    border-left: 4px solid var(--warn-border);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    margin: 14px 0;
+    font-size: 0.94rem;
+  }
+  .muted { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>PTCGPB 플러그인 사용법</h1>
+<p class="muted">docs\Plugin\README.md의 HTML판 - 내용은 동일하다.</p>
+
+<div class="note">
+이 문서와 예제 코드는 저장소 루트의 <code>Plugins\</code>가 아니라
+<strong><code>docs\Plugin\</code></strong>에 있다(2026-08-09 이동) - 예제라도 실제로
+스캔되는 <code>Plugins\</code> 폴더에 있으면 실수로 켜질 위험이 있어서다.
+<strong>예제를 써보려면 <code>docs\Plugin\examples\</code>의 원하는 폴더를 통째로
+복사해서 저장소 루트의 <code>Plugins\</code> 폴더 안에 붙여넣을 것</strong> -
+<code>Plugins\&lt;복사한 폴더명&gt;\plugin.ini</code>와 <code>main.ahk</code>가 그대로
+살아있어야 한다.
+</div>
+
+<p>저장소 루트의 <code>Plugins\</code> 폴더 아래 하위 폴더 하나가 플러그인 하나다. 봇을 시작할
+때마다(<code>StartBot</code>) <code>PTCGPB.ahk</code>의 <code>PluginEngine_GenerateManifest()</code>가 이
+폴더를 스캔해서, 문제없는 플러그인만 <code>Scripts\_plugins.g.ahk</code>에 인스턴스화 코드까지
+같이 생성해 워커(<code>1.ahk</code> 및 그 복제본 <code>2.ahk</code>, <code>3.ahk</code>, ...)가 로드하게 만든다.</p>
+
+<h2>최소 구성</h2>
+<pre><code>Plugins\
+  MyPlugin\
+    plugin.ini
+    main.ahk</code></pre>
+
+<p><strong><code>plugin.ini</code></strong>:</p>
+<pre><code>[Plugin]
+Name=MyPlugin
+Class=MyPlugin
+Main=main.ahk
+Enabled=1</code></pre>
+
+<ul>
+  <li><code>Name</code>: <strong>폴더명과 반드시 동일</strong>해야 한다. 다르면 로더가 그냥 건너뛴다(<code>Scripts\_plugins.g.ahk</code>에 안 실림, <code>Logs\Plugins.txt</code>에 사유 기록).</li>
+  <li><code>Class</code>: <strong>신규 키</strong> - <code>main.ahk</code> 안 어떤 클래스를 쓸지 지정한다. 클래스명은 <code>Name</code>(폴더명)과 달라도 되고 자유롭게 지어도 된다.</li>
+  <li><code>Main</code>: 진입 파일. 생략하면 <code>main.ahk</code>.</li>
+  <li><code>Enabled</code>: <code>0</code>으로 두면 폴더를 안 지우고도 끌 수 있다. 생략 시 <code>1</code>.</li>
+  <li><code>Instances</code> (선택): 쉼표로 인스턴스 번호를 나열하면 그 번호에서만 훅이 등록된다(예: <code>Instances=3,5</code>). 생략하면 전 인스턴스에 적용.</li>
+</ul>
+
+<p><strong><code>main.ahk</code></strong>: <code>Class</code>와 <strong>정확히 같은 이름의 클래스</strong> 하나가
+<code>Plugin</code>을 상속(<code>extends Plugin</code>)해서 선언한다. 예시(<code>docs\Plugin\examples\HelloPacks\main.ahk</code>
+그대로):</p>
+<pre><code>class HelloPacks extends Plugin {
+    static hookTarget := "PackOpening"
+
+    afterEvent(ctx) {
+        this.Log("팩 열림 감지")
+    }
+}</code></pre>
+
+<p>이게 끝이다 - 별도 등록 함수를 부를 필요 없다. <code>static hookTarget</code>으로 어느
+기능에 붙을지 선언하고, 아래 카탈로그 표에서 그 타겟이 지원하는
+<code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code> 중 필요한 것만 override하면 엔진이 로드
+시점에 인스턴스를 만들어 알아서 호출해준다.</p>
+
+<h2>훅 타겟 카탈로그 (17개)</h2>
+<p>플러그인이 "어디에 붙을지"는 <code>static hookTarget</code>으로 정한다. 아래 표에서
+<code>before</code>는 <code>beforeEvent(ctx)</code>, <code>after</code>는 <code>afterEvent(ctx)</code>, <code>onItem</code>은
+<code>onItem(ctx)</code>에 대응한다 - 그 타겟이 지원하는 메서드 중 필요한 것만 구현하면 된다.</p>
+<table>
+<tr><th>hookTarget</th><th>지원 메서드</th><th>ctx</th><th>실제 발화 위치</th></tr>
+<tr><td><code>RunPhase</code></td><td>before+after</td><td><code>{phase}</code> / <code>{phase, state}</code></td><td><code>1.ahk</code> 메인 루프</td></tr>
+<tr><td><code>Wonderpick</code></td><td>before+after</td><td><code>{context}</code> / <code>{context, picked?}</code></td><td><code>PackOpeningRun.ahk</code> OpenPacks/Finish</td></tr>
+<tr><td><code>FriendAdd</code></td><td>before+after+<strong>onItem</strong></td><td><code>{renew}</code> / <code>{count, renew}</code>, onItem: <code>{index, total, id, status}</code></td><td><code>FriendManager.AddFriends()</code> - before는 <code>SetActivity</code> 직후, onItem은 친구 ID별 시도 결과마다, after는 끝. <code>renew</code>는 <code>AddFriends(renew:=false,...)</code> 인자 그대로(최초 추가/갱신 구분)</td></tr>
+<tr><td><code>FriendRemove</code></td><td>before+after+<strong>onItem</strong></td><td><code>{}</code> / <code>{count}</code>, onItem: <code>{index, status}</code></td><td><code>FriendManager.RemoveFriends()</code> - before는 <code>SetActivity</code> 직후, onItem은 항목 처리마다, after는 끝</td></tr>
+<tr><td><code>InstanceRestart</code></td><td>before+after</td><td><code>{usage, mode}</code> / <code>{}</code></td><td><code>PackOpeningRun.Prepare()</code> - VRAM 임계값 초과 재시작 구간</td></tr>
+<tr><td><code>DailyMission</code></td><td>before+after</td><td><code>{withExtraPack}</code> / <code>{withExtraPack, dailyRewardsClaimed}</code></td><td><code>PackOpeningRun.Finish()</code> - 일일미션(단독/추가팩 동반) 두 콜사이트, <code>withExtraPack</code>으로 구분</td></tr>
+<tr><td><code>SpecialMission</code></td><td>before+after+<strong>onItem</strong></td><td><code>{}</code> / <code>{}</code>, onItem: <code>{id, status}</code></td><td><code>PackOpeningRun.Finish()</code> 특별미션 구간, onItem은 <code>ClaimVisibleEventRewards</code>의 이벤트별 수령마다(<code>MissionAndRewards.ahk</code>)</td></tr>
+<tr><td><code>Gift</code></td><td>before+after</td><td><code>{}</code> / <code>{giftClaimed, openedGiftPack}</code></td><td><code>PackOpeningRun.Finish()</code> - 선물 수령 구간</td></tr>
+<tr><td><code>Hourglass</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td><code>PackOpeningRun.Finish()</code> - 모래시계 소비 구간</td></tr>
+<tr><td><code>Showcase</code></td><td>before+after+<strong>onItem</strong></td><td><code>{remaining}</code> / <code>{remaining}</code>, onItem: <code>{index, total, id}</code></td><td><code>PackOpeningRun.Finish()</code> 구간, onItem은 <code>showcaseLikes</code>의 ID별 반복마다(<code>FriendManager.ahk</code>). after의 <code>remaining</code>은 before와 같은 값(좋아요 시도 전 남은 개수)</td></tr>
+<tr><td><code>PackOpening</code></td><td>after만</td><td>팩 개봉 결과 + <code>stopEarly</code></td><td><code>1.ahk</code> - 팩 단위로 반복 발화돼서 activity 구간 개념이 없음, before 없음. ctx는 <code>EvaluatePack()</code>이 돌려주는 <code>result</code> 객체 그 자체(<code>cards</code>/<code>pack</code>/<code>shinedust</code>/<code>lang</code>/<code>country</code>/<code>raw</code> 포함)에 <code>stopEarly</code>(선물팩 개봉 등 조기 반환 경로였는지, <code>CheckPack(stopEarly:=false)</code> 인자 그대로)를 얹은 것</td></tr>
+<tr><td><code>GodPack</code></td><td>before+after(<strong>after는 best-effort</strong>)</td><td><code>{validity, cards, finalizeAccount}</code> / <code>{validity, cards, screenshot, finalizeAccount}</code></td><td>before=큐잉 시점, after=<code>FinalizeInjectedGodPackAccount</code> 직후~<code>restartGameInstance</code> 직전. 큐잉~flush 사이 stuck 재시작이 끼면 after가 아예 안 불릴 수 있음. after 시점엔 session의 대응 pending 값들이 이미 클리어돼서, <code>screenshot</code>(스크린샷 경로 문자열, <code>""</code> 가능)을 포함한 이 4개 필드가 플러그인이 그 값을 볼 수 있는 유일한 경로다</td></tr>
+<tr><td><code>AccountExhausted</code></td><td>after만</td><td><code>{deleteMethod}</code></td><td><code>PackOpeningRun.Prepare()</code> - 순간적 판정, before 없음</td></tr>
+<tr><td><code>StuckRestart</code></td><td><strong>before만</strong></td><td><code>{reason, callerFile, callerLine, RL}</code></td><td><code>1.ahk</code> isStuck 분기 - 이후 <code>SafeReload</code>로 프로세스가 죽어서 after는 원천적으로 불가능. <code>callerFile</code>/<code>callerLine</code>은 <code>restartGameInstance()</code>를 호출한 지점(<code>Error("", -1)</code>로 얻음), <code>RL</code>은 재시작 후 리로드 여부 - 불리언 또는 특수 사유 문자열(예: <code>"GodPack"</code>)</td></tr>
+<tr><td><code>BeginnerMission</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td><code>PackOpeningRun.GrindBeginnerMissions()</code> 안 <code>HomeAndMission()</code> 호출 앞뒤</td></tr>
+<tr><td><code>Tutorial</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td><code>DoTutorial</code> 호출부(<code>PackOpeningRun.ahk</code>)</td></tr>
+<tr><td><code>FoundTradeableCard</code></td><td>before+after</td><td>OCR 경로: <code>{count, foundCards, cards, pack, lang, country, source:"ocr"}</code> / 보더 폴백 경로: <code>{count, source:"border"}</code></td><td><code>1.ahk</code>의 <code>CheckPack()</code> 안 <code>FoundTradeableNew</code>(s4t 신형식, OCR 인식 성공) / <code>CheckPackFallback()</code> 안 <code>FoundTradeable</code>(OCR 실패 후 보더 인식 폴백) 두 호출부 - 서로 배타적 분기라 같은 hookTarget 하나로 묶는다. <code>count</code>는 발견된 매수. 보더 폴백 경로는 <code>foundCards</code>/<code>cards</code>/<code>pack</code>/<code>lang</code>/<code>country</code>가 아예 없다(OCR 실패라 그 값들 자체가 없음) - <code>source</code>로 어느 경로인지 구분해서 없는 필드는 <code>ctx.Get()</code>으로 읽을 것</td></tr>
+</table>
+<div class="note">
+<code>FriendAdd.after</code>의 <code>count</code>는 성공한 친구 수가 아니라 시도한
+ID 총수다(<code>session.get("friendIDs").Length</code>) - 이름만 보고 성공 수로
+오해하지 말 것.
+</div>
+<div class="note">
+<code>Hourglass</code>/<code>Tutorial</code>/<code>BeginnerMission</code>/<code>Wonderpick</code>(EventMission
+경로)의 ctx가 지금 비어있는 건 하위 함수(<code>SpendAllHourglass()</code>/<code>DoTutorial()</code>/
+<code>HomeAndMission()</code>/<code>DoWonderPickOnly()</code>)가 반환값 자체를 안 받아서
+core 쪽에 노출할 로컬이 없기 때문이다 - ctx 확장이 아니라 반환값 캡처가 선행돼야
+하는 별개 작업이라 이번 범위에선 제외했다(필요해지면 그때 다시 논의).
+</div>
+
+<h2>범용 메서드 3개</h2>
+<p><code>Plugin</code>을 상속하면 아래 3개 메서드를 override할 수 있다(부모 기본값은 전부 no-op):</p>
+<ul>
+  <li><code>beforeEvent(ctx)</code> - 그 hookTarget이 <code>before</code>를 지원하면 시작 직전에 호출.</li>
+  <li><code>afterEvent(ctx)</code> - <code>after</code>를 지원하면 끝난 직후에 호출.</li>
+  <li><code>onItem(ctx)</code> - <code>onItem</code>을 지원하면(<code>FriendAdd</code>/<code>FriendRemove</code>/<code>SpecialMission</code>/<code>Showcase</code>), 항목 하나(친구 ID/이벤트명/쇼케이스 ID 등)를 처리할 때마다 호출.</li>
+</ul>
+<p>한 클래스 안에서 그 <code>hookTarget</code>이 지원하는 메서드는 <strong>몇 개든 동시에 구현
+가능</strong>하다(하한 1개 - 아무것도 구현 안 하면 검증에서 걸린다, 상한은 그 타겟이
+지원하는 메서드 개수). 지원 안 하는 메서드를 구현해도 에러는 아니고 그냥 안
+불린다(검증 단계에서 경고만 남음).</p>
+
+<h2>ctx.Get(key, default) - 조건부 필드 안전 접근</h2>
+<p>위 표의 필드 중 다수는 조건부다 - 예를 들어 <code>RunPhase.after</code>의
+<code>state</code>는 Prepare/Finish 단계에서만 존재하고, <code>GodPack.after</code>의
+<code>cards</code>는 폴백 경로면 빈 문자열이다. 이런 조건부 필드를
+<code>ctx.필드명</code>으로 직접 읽으면, 없는 순간엔 AHK v2가
+<code>PropertyError</code>를 던진다.</p>
+<p><code>Fire()</code>는 훅을 부르기 직전에 모든 <code>ctx</code>에
+<code>Get(key, default := "")</code> 메서드를 자동으로 붙인다 -
+<code>session.get()</code>/<code>botConfig.get()</code>과 같은 관례다:</p>
+<pre><code>value := ctx.Get("state", "")       ; 없으면 예외 대신 ""
+count := ctx.Get("count", 0)</code></pre>
+<p><strong>반드시 있는 게 확실한 필수 필드</strong>(예: <code>FriendAdd.onItem</code>의
+<code>id</code>, <code>RunPhase.before</code>의 <code>phase</code>)는
+<code>ctx.필드명</code>으로 직접 읽어도 안전하다 - 조건부 필드에만
+<code>ctx.Get()</code>을 쓸 것. <code>Plugin.ahk</code>의 <code>Plugin.CTX_SHAPES</code>가
+"target.when → 실릴 수 있는 필드명 전체집합"의 실제 정의처다(이 문서는 그걸
+프로즈로 옮겨 적은 사본). 코드가 <code>CTX_SHAPES</code>에 없는 필드를 실으면
+<code>PluginEngine.Fire()</code>가 자동으로 <code>Logs\Plugins.txt</code>에 경고를
+남긴다 - "문서/카탈로그가 코드를 못 따라간" 신호다.</p>
+<p>주의: <code>Fire()</code>가 <code>ctx</code>에 <code>Get</code>을 매번
+<code>DefineProp</code>으로 붙이기 때문에, <code>ctx</code> 자체를
+<code>JSON.stringify(ctx)</code>로 그대로 직렬화하면(<code>Dump(ctx)</code> 포함)
+<code>Get</code>도 같이 열거되면서 <code>Scripts/lib/JSON.ahk</code>의 기존
+버그(프로퍼티 열거와 개수 판정 기준이 서로 달라 trailing comma가 남는 등)가
+미묘하게 튈 수 있다. 디스코드 웹훅 등 외부로 <code>ctx</code>를 보낼 땐
+<code>ctx</code>를 통째로 넘기지 말고, 필요한 필드만 골라 새 객체로 추려서
+보낼 것.</p>
+
+<h2>개발자 편의 함수 4개</h2>
+<p>게이트(<code>SessionRead</code> 등)와 별개로, 개발 중 관측/디버깅용으로 <code>Plugin</code>이
+제공하는 인스턴스 메서드 4개다. <strong>반드시 <code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code>
+안에서만 호출할 것</strong> - <code>this._name</code>은 로더가 인스턴스 생성자(<code>__New()</code>)
+실행이 끝난 뒤에야 채워 넣기 때문에, <code>__New()</code>를 override해서 그 안에서 이
+함수들을 부르면 <code>_name</code>이 아직 빈 값이라 깨진다(<code>__New()</code>를 꼭 override해야
+한다면 <code>super.__New()</code>를 맨 먼저 호출할 것 - 안 그러면 <code>_timers</code> Map이 없어서
+<code>TimerStart</code>/<code>TimerEnd</code>도 깨진다).</p>
+<table>
+<tr><th>메서드</th><th>용도</th><th>근거/재사용</th></tr>
+<tr><td><code>Log(message, level := "info")</code></td><td>관측용 값을 별도 파일에 기록 - "행 걸리는 게 관측돼서 로그 남기고 싶을 때"용. 엔진 자동 로그(<code>Logs\Plugins.txt</code>, 로드/진입/결과)와 <strong>분리된 <code>Logs\Plugins_Dev.txt</code></strong>에 쓴다 - 자동 로그가 세션당 수백 줄일 수 있어서, 개발자가 직접 남긴 메시지가 그 안에 묻히지 않게. <code>level</code>은 <code>"info"</code>/<code>"warn"</code>/<code>"debug"</code> 등 기존 레벨 그대로.</td><td><code>Scripts/lib/Logging.ahk</code>의 <code>LogMessage(level, message, logFile)</code>를 그대로 씀(신규 로깅 메커니즘 없음)</td></tr>
+<tr><td><code>TimerStart(label)</code> / <code>TimerEnd(label)</code></td><td>코드 두 지점 사이 소요시간 측정 - <code>TimerStart("x")</code>를 앞에, <code>TimerEnd("x")</code>를 뒤에 두면 그 사이 걸린 ms를 계산해서 자동으로 <code>Log()</code>까지 남기고 반환도 해준다. 라벨별로 여러 구간 동시 측정 가능(인스턴스별 - 플러그인끼리 라벨 안 겹침).</td><td><code>A_TickCount</code> 기반 - "수 초 이상 걸리는 블로킹 금지" 규칙 위반 자가진단용으로 특히 유용</td></tr>
+<tr><td><code>Dump(value, label := "")</code></td><td>객체/배열/Map을 사람이 읽을 수 있는 문자열로 직렬화해서 <code>Log()</code>로 남김. AHK v2엔 <code>console.log</code> 같은 게 없어서, <code>ctx.cards</code>(배열) 같은 복합 값을 볼 때 유용 - <code>ctx.cards.ToString()</code>은 의미 없는 값이 나온다.</td><td><code>Scripts/lib/JSON.ahk</code>의 <code>JSON.stringify(obj, expandlevel, space)</code> 재사용(신규 직렬화 로직 없음)</td></tr>
+<tr><td><code>Screenshot(label := "")</code></td><td>현재 에뮬레이터 창을 캡처해서 <code>Screenshots\Plugins\</code>에 저장하고 경로를 <code>Log()</code>로 남김 - "행 걸린 것 같은데 그 순간 화면이 어땠는지" 눈으로 확인하고 싶을 때. 코어가 stuck 감지 시 이미 똑같은 패턴을 씀(<code>SaveStuckScreenshot</code>, <code>Screenshots\Stuck\</code>에 저장) - 그 방식을 플러그인용으로 그대로 재사용, 폴더만 분리.</td><td><code>GDIPService.CaptureWindow(hWnd)</code> + <code>Gdip_SaveBitmapToFile</code></td></tr>
+</table>
+<p>이 4개 다 실패해도(창을 못 찾음, 라벨 오타 등) 조용히 빈 값/0을 반환하고
+로그만 남긴다 - 개발자 편의 함수가 던진 예외 때문에 3진아웃에 걸려서 원래
+보려던 훅 자체가 꺼지면 본말전도이므로, 내부에서 방어적으로 처리한다.</p>
+
+<h2>타겟+메서드 충돌 규칙</h2>
+<p>같은 <code>hookTarget</code> + 같은 메서드(<code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code>)를 구현한
+플러그인이 2개 이상이면, <strong>그 메서드만</strong> 딱 1개(승자)만 동작하도록 제한한다
+(나머지는 무시).</p>
+<ul>
+  <li><strong>승자 판정</strong>: <strong>클래스명 알파벳순</strong>(오름차순, 첫 번째가 승자) - 폴더명이
+  아니라 <strong>클래스명</strong> 기준. 폴더명은 보통 사용자 닉네임이라 조정하기
+  어렵지만, 클래스명은 개발자가 자유롭게 짓기 때문에 우선순위를 스스로
+  조절하고 싶으면 이름 앞에 <code>A_</code>/<code>Z_</code> 같은 접두사를 붙이면 된다.</li>
+  <li><strong>진 쪽 처리</strong>: 플러그인 전체가 아니라 <strong>충돌난 그 메서드 호출만 생략</strong>.
+  같은 타겟에서 구현한 다른(무충돌) 메서드나, 다른 hookTarget에 대해 만든
+  별도 플러그인은 전혀 영향 없음.</li>
+  <li><strong>3진아웃과의 관계 - 대타 없음</strong>: 승자가 나중에 3회 연속 실패해서 세션 내
+  비활성되면, 그 <code>target.when</code>은 그냥 안 불리게 된다 - <strong>진 쪽(2등)이
+  승계하지 않는다</strong>. 충돌 판정은 <code>StartBot</code>(로드 시점) 1회만 계산되고
+  런타임에 다시 안 돈다 - 승자 교체가 필요하면 사용자가 직접 승자 플러그인을
+  고치거나 꺼야 한다.</li>
+  <li><strong>예외: <code>PropertyError</code>/<code>MethodError</code>는 1회만에 즉시
+  비활성</strong>: 위 "3회 연속 실패"는 일반 예외(네트워크 타임아웃 등 일시적
+  오류) 기준이다. <code>PropertyError</code>/<code>MethodError</code>(존재하지
+  않는 프로퍼티/메서드 접근)는 결정론적이다 - 재시도해도 매번 똑같이
+  실패하므로, 3회 유예 없이 <strong>1회 실패만으로</strong> 그 훅이 세션
+  내내 비활성된다. 실무 함의: 조건부 필드(예: <code>Wonderpick.after</code>의
+  <code>picked</code>는 CreateBots 경로에만 실리고 EventMission 경로엔
+  없음)를 <code>ctx.필드명</code>으로 직접 읽는 플러그인은, 그 필드가 없는
+  호출 단 한 번으로 세션 내내 죽는다 - 위에서 설명한
+  <code>ctx.Get(key, default)</code>을 쓰면 이런 사고를 피할 수 있다.</li>
+  <li><strong>인스턴스별 결과가 다를 수 있음</strong>: <code>Instances=</code> ini 키로 참여 인스턴스가
+  플러그인마다 다르면, 워커 번호마다 승자가 달라질 수 있다. Plugin Manager
+  UI의 정적 검사는 "전 인스턴스에 다 등록된다고 가정했을 때"의 충돌만
+  보여주므로, 실제 워커별 결과와 다를 수 있다.</li>
+  <li><strong>Plugin Manager UI 표시</strong>: 상태 컬럼에 ⚠️가 뜨고(구조는 정상이나 메서드
+  일부가 다른 플러그인에 밀려 비활성), 그 행에 마우스를 올리면 어떤
+  메서드가 누구한테 밀렸는지 호버 툴팁으로 색 강조되어 보인다(아래 "Plugin
+  Manager UI" 절 참고).</li>
+</ul>
+
+<h2>훅 실행 타임아웃</h2>
+<p>플러그인 훅이 멈춰서 안 돌아오면(무한 루프, <code>Sleep</code> 오남용 등) 워커 전체가
+같이 멈춘다 - 이걸 잡는 워치독이 엔진에 있다. <strong><code>HOOK_TIMEOUT_MS</code>(5분)</strong>를
+넘게 한 훅이 안 끝나면, 신규 재시작 경로 없이 기존 stuck 복구 경로
+(<code>restartGameInstance</code>, 스크린샷 저장 <code>SaveStuckScreenshot</code>, 계정 정리 예약
+등)를 그대로 태워서 워커를 강제 재시작한다.</p>
+<div class="note">
+<strong>한계(반드시 인지할 것)</strong>: AHK v2는 단일 스레드라 이 워치독(<code>SetTimer</code>
+콜백)은 지금 도는 스레드가 "끼어들 수 있는 지점"(<code>Sleep</code>, 메시지펌프 등)에
+있을 때만 발동한다. <code>Sleep</code> 한 번 없는 순수 타이트 루프(<code>Loop { }</code>에 아무
+대기도 없는 경우)는 이 워치독으로도 못 끊는다 - <strong>완벽한 강제 종료가
+아니라 최선의 방어선</strong>이다. 다만 이 프로젝트의 실제 폴링 코드
+(<code>FindImageWithAction</code> 등)는 전부 <code>Sleep</code> 기반이라 실질적으로 대부분의 "행"
+상황엔 먹힌다.
+</div>
+
+<h2><code>ctx.phase</code> 값 4개 - <code>RunPhase</code>의 before/after에서만 온다</h2>
+<p>플러그인이 "어디에 붙을지"를 고르는 건 <code>static hookTarget</code>이다(예:
+<code>hookTarget="RunPhase"</code>로 선언하면 <code>RunPhase</code>의 before/after에 붙는 것).
+<code>phase</code>는 그 중 <code>RunPhase</code> 타겟에 한해서, <strong>지금 코어가 어느
+단계를 도는 중인지</strong> 알려주는 <code>ctx.phase</code> 값일 뿐이다. 대상 파일은
+<code>module\classes\PackOpeningRun.ahk</code>의 static 메서드 4개와 1:1이다.</p>
+<table>
+<tr><th><code>ctx.phase</code> 값</th><th>대응 코어 메서드</th><th>이 단계가 하는 일</th></tr>
+<tr><td><code>Prepare</code></td><td><code>PackOpeningRun.Prepare()</code></td><td>팩 추첨, 서버리셋 대기, VRAM 재시작 판단, 계정 로드, 튜토리얼</td></tr>
+<tr><td><code>OpenPacks</code></td><td><code>PackOpeningRun.OpenPacks()</code></td><td>원더픽, 친구 추가, 팩 선택/개봉, 일일미션</td></tr>
+<tr><td><code>GrindBeginnerMissions</code></td><td><code>PackOpeningRun.GrindBeginnerMissions()</code></td><td>초보자 미션용 팩/모래시계 반복</td></tr>
+<tr><td><code>Finish</code></td><td><code>PackOpeningRun.Finish()</code></td><td>특별미션/선물/모래시계 소비/친구 삭제/쇼케이스/계정 저장</td></tr>
+</table>
+<p class="muted">코어 메서드 이름과 완전히 동일하다 - <code>1.ahk</code>의 <code>Fire("RunPhase", "before"/"after", {phase: "Prepare"})</code> 등 실제 호출부 그대로.</p>
+<p class="muted">예: <code>beforeEvent(ctx) { if (ctx.phase != "OpenPacks") return ... }</code>처럼 관심 있는 단계만 골라서 반응하면 된다.</p>
+
+<h2><code>activity</code> 값 11개 - 이건 플러그인과 무관, Cockpit 대시보드 전용이다</h2>
+<div class="note">
+<strong>여기가 오해하기 쉬운 지점이다</strong>: <code>activity</code>는 플러그인 시스템(<code>PluginEngine.ahk</code>)이 아니라 완전히 다른 코드(<code>module\classes\CockpitInstancePush.ahk</code>)가 쓰는 값이다. 각 인스턴스가 "지금 세부적으로 뭘 하는 중인지"(예: 친구 추가 중, 선물 수령 중)를 자기 <code>Scripts\N.ini</code>의 <code>[Cockpit]</code> 섹션에 써두면, Cockpit 대시보드가 그걸 읽어서 화면에 보여주는 용도다. <strong>플러그인 <code>ctx</code>에는 이 값이 아예 들어오지 않는다</strong> - <code>RunPhase</code>의 <code>ctx</code>엔 <code>phase</code>만 있고 <code>activity</code>는 없다. 참고용으로만 목록을 남긴다.
+</div>
+<table>
+<tr><th>activity 값</th><th>코어에서 쓰이는 곳</th></tr>
+<tr><td><code>RestartingInstance</code></td><td>VRAM 초과로 인스턴스 재시작 중 (Prepare)</td></tr>
+<tr><td><code>AddingFriends</code></td><td>친구 추가 중 (FriendManager.AddFriends)</td></tr>
+<tr><td><code>RemovingFriends</code></td><td>친구 삭제 중 (FriendManager.RemoveFriends)</td></tr>
+<tr><td><code>WonderpickCreateBots</code></td><td>원더픽 진행 중, Create Bots 모드 (OpenPacks)</td></tr>
+<tr><td><code>ClaimingDailyMission</code></td><td>일일미션(4시간모래시계)만 수령 중 (OpenPacks)</td></tr>
+<tr><td><code>ClaimingDailyMissionAndExtraPack</code></td><td>일일미션+추가팩 수령 중 (OpenPacks)</td></tr>
+<tr><td><code>WonderpickEventMission</code></td><td>원더픽 진행 중, 이벤트 미션용 (Finish)</td></tr>
+<tr><td><code>ClaimingSpecialMission</code></td><td>특별미션 보상 수령 중 (Finish)</td></tr>
+<tr><td><code>ReceivingGift</code></td><td>선물 수령 중 (Finish)</td></tr>
+<tr><td><code>ConsumingHourglass</code></td><td>모래시계 소비 중 (Finish)</td></tr>
+<tr><td><code>ShowcaseLiking</code></td><td>쇼케이스 좋아요 누르는 중 (Finish)</td></tr>
+</table>
+
+<h2>크로스 플러그인 참조</h2>
+<p>다른 플러그인의 인스턴스를 얻으려면 <code>this.GetPlugin("다른플러그인명")</code>
+(인스턴스 메서드 - 내부적으로 <code>PluginEngine.GetPlugin</code>을 얇게 감싼다). 이름은
+클래스명이 아니라 <strong>폴더명</strong>(<code>plugin.ini</code>의 <code>Name</code>)이다. 그 플러그인이
+꺼져있거나 없으면 <code>""</code>을 돌려주므로 반드시
+<code>if (other := this.GetPlugin("X"))</code>처럼 방어할 것. <strong>훅 안(<code>beforeEvent</code>/
+<code>afterEvent</code>/<code>onItem</code>)에서만</strong> 호출할 것 - 파일 최상위에서 부르면 include
+순서에 따라 아직 그 플러그인이 로드 안 됐을 수 있다.</p>
+
+<h2>상태 저장 - 두 층</h2>
+<ul>
+  <li><strong>세션 중만 유지되면 되는 값</strong>: 클래스의 <strong>인스턴스 필드</strong>(<code>this.someField</code>)
+  - 플러그인마다 인스턴스를 하나씩 만들므로 <code>this.xxx</code>를 쓴다. 플러그인
+  코드는 워커 프로세스 안에 상주하므로 이미 봇의 세션(<code>session</code>)과 같은
+  수명이다 - 별도로 등록/왕복할 필요가 없다.</li>
+  <li><strong>워커 재시작(리로드/재접속) 뒤에도 남아야 하는 값</strong>: <code>this.SaveValue("키",
+  값)</code> / <code>this.LoadValue("키", 기본값)</code>. 인스턴스 자기 <code>Scripts\N.ini</code>의
+  <code>[Plugin_내폴더명]</code> 섹션에 쓴다 - 섹션 이름 자체가 소유권이라 다른
+  플러그인 값과 안 섞인다.</li>
+</ul>
+
+<h2>봇 상태(session/botConfig) 접근</h2>
+<ul>
+  <li><strong>읽기</strong>: <code>this.SessionRead(키)</code>, <code>this.ConfigRead(키)</code> - 둘 다 자유롭게 읽을 수 있다.</li>
+  <li><strong>쓰기</strong>: <code>this.SessionWrite(키, 값)</code> - <strong>화이트리스트에 있는 키만</strong> 성공한다(지금은 <code>keepAccount</code> 하나뿐). 화이트리스트에 없는 키는 조용히 거부되고 <code>Logs\Plugins.txt</code>에 경고가 남는다. <code>botConfig</code>는 쓰기 API 자체가 없다(설정 저장은 <code>plugin.ini</code>를 직접 쓸 것).</li>
+  <li><code>SessionRead()</code>가 돌려주는 값이 배열/Map 같은 객체면 <strong>읽기 전용으로만 다룰 것</strong> - 내부 내용을 고치면 코어 상태가 그대로 오염된다.</li>
+</ul>
+
+<div class="note">
+이 게이트는 보안이 아니라 난간이다. AHK v2엔 private이 없어서
+<code>session.set()</code>을 직접 불러 우회할 수 있다 - 가치는 허용 범위가 코드로
+문서화되고, 위반이 로그에 남아 진단이 빨라진다는 것뿐이다.
+</div>
+
+<h2>지켜야 할 것 (안 지키면 워커가 멈추거나 죽을 수 있음)</h2>
+<ol>
+  <li>훅 안에서 <code>FindImageWithAction</code>을 부를 땐 <strong><code>count: 1</code> 또는 <code>giveUpTime</code>을 반드시 넣을 것</strong>. 기본값(<code>count: -1</code>, 무한 폴링)으로 부르면 니들이 안 나타났을 때 워커가 그 훅 안에 영원히 갇힌다.</li>
+  <li><code>ExitApp</code> / <code>Reload</code> / <code>Pause</code> 호출 금지 - 워커가 즉사/정지한다.</li>
+  <li><code>SetTimer</code> / <code>Hotkey</code> 등록 금지 - 코어 화면 조작 도중 인터리브되면 클릭 레이스가 난다.</li>
+  <li><code>session.run.xxx</code> 같은 owner 객체 직접 접근 금지 - 위의 게이트 함수만 쓸 것.</li>
+  <li>수 초 이상 걸리는 블로킹 <code>Sleep</code> 금지 - 훅은 코어 런 루프 한복판에서 돈다.</li>
+  <li>전역 함수/변수/니들 이름에 자기 플러그인 접두사를 붙일 것(예: <code>MyPlugin_</code> 또는 <code>EBC_</code>). 코어나 다른 플러그인과 이름이 겹치면 로드 자체가 실패해서(아래 검증 단계에서) 그 플러그인이 통째로 제외된다.</li>
+  <li>게이트(<code>SessionRead</code>/<code>SessionWrite</code>/<code>ConfigRead</code>/<code>SaveValue</code>/<code>LoadValue</code>/<code>GetPlugin</code>)와 개발자 편의 함수(<code>Log</code>/<code>TimerStart</code>/<code>TimerEnd</code>/<code>Dump</code>/<code>Screenshot</code>)는 <strong><code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code> 안에서만</strong> 호출할 것 - <code>__New()</code>(생성자) 안에서 부르면 <code>this._name</code>이 아직 안 채워져서 깨진다(위 "개발자 편의 함수" 절 참고).</li>
+</ol>
+
+<h2>검증 - StartBot마다 자동으로 일어남</h2>
+<ol>
+  <li>폴더 스캔, <code>Name</code>=폴더명 확인.</li>
+  <li><code>plugin.ini</code>의 <code>Class=</code> 키 필수 확인, <code>main.ahk</code> 안에 <code>class &lt;Class값&gt; extends Plugin</code> 선언이 있는지 정규식으로 확인.</li>
+  <li><code>static hookTarget := "..."</code> 값이 위 훅 타겟 카탈로그(17개) 중 하나인지 확인.</li>
+  <li><code>beforeEvent(</code>/<code>afterEvent(</code>/<code>onItem(</code> 중 최소 1개 구현했는지 정규식으로 확인 → 없으면 통과 실패. 타겟이 지원 안 하는 메서드를 구현했으면 통과는 하되 <code>Logs\Plugins.txt</code>에 경고만(치명적 아님, 그냥 안 불림).</li>
+  <li>같은 hookTarget+메서드를 구현한 다른(활성화+구조 정상) 플러그인과 충돌하는지 계산(위 "타겟+메서드 충돌 규칙" 절) - 이 결과를 Plugin Manager UI의 ⚠️ 표시와 호버 툴팁이 그대로 쓴다.</li>
+  <li>동봉된 <code>.png</code>는 <code>Scripts\Needles\</code>에 없는 것만 복사(출하 이미지는 덮어쓰지 않음).</li>
+  <li>이미 통과한 플러그인들 + 이번 후보를 합쳐서 1.ahk 전체를 실제로 실행하지 않고(파싱만) 검사 - 문제 있으면 <strong>이번 후보만</strong> 제외되고 나머지는 그대로 진행.</li>
+  <li>하나라도 제외되면 트레이 알림 1개 + <code>Logs\Plugins.txt</code>에 사유(뭘 고쳐야 하는지까지) 기록.</li>
+</ol>
+
+<p><code>plugin.ini</code>의 <code>Enabled=0</code>이나 폴더를 지우는 것만으로 다음 StartBot부터
+제외된다.</p>
+
+<h2>Plugin Manager UI (PTCGPB.ahk)</h2>
+<p><code>plugin.ini</code>를 직접 안 고쳐도 되도록 관리 화면이 있다: <strong>메인 창 →
+🧩 도구 아이콘 → Tools &amp; System Settings → 🧩 Plugin Manager</strong> 버튼.</p>
+<ul>
+  <li><strong>목록</strong>: <code>Plugins\</code> 아래 폴더를 전부 보여준다(꺼져있는 것도 포함). 맨 왼쪽 체크박스가 활성화 여부, 두 번째 칸이 상태 - <strong>✅ 정상</strong>(구조 검증 통과 + 충돌 없음 + 죽은 플러그인 아님) / <strong>⚠️</strong>(구조는 정상이나 메서드 일부가 다른 플러그인에 밀려 비활성 - 사유 칸에 "afterEvent: &lt;승자 클래스명&gt;에 밀림" 형태로 표시 - 충돌 승자 판정 자체가 클래스명 기준이라 클래스명으로 표시한다) / <strong>❌</strong>(구조 검증 자체 실패 + 사유). 실제로 워커에 로드 가능한지(문법 오류 등)까지는 여기서 안 본다 - 그건 StartBot 시점에 확정된다.</li>
+  <li><strong>🔴 죽은 플러그인</strong>: 구현한 메서드가 전부 그 <code>hookTarget</code>이 지원 안 하는 메서드뿐이라 하나도 안 불리는 경우, 이름 앞에 <code>🔴</code> 접두사가 붙고 상태 컬럼에 <code>❌ 호출 가능한 메서드 없음</code>이 뜨며, <code>plugin.ini</code>의 <code>Enabled</code> 값과 무관하게 체크박스가 항상 기본 미체크로 그려진다(직접 다시 체크하는 건 막지 않음 - 어차피 아무 메서드도 안 불리니 해가 없다).</li>
+  <li><strong>⚠️/🔴 행 호버 툴팁</strong>: 행 위에 마우스를 올리면 어떤 메서드가 누구한테 밀려서 실행이 안 되는지(충돌), 또는 어떤 메서드가 이 타겟에서 허용되지 않는지를 색 강조된 팝업으로 보여준다.</li>
+  <li><strong>🔄 새로고침</strong>: 목록을 다시 스캔한다. 파일을 안 건드리는 순수 조회라 빠르다.</li>
+  <li><strong>🗑 삭제</strong>: 목록에서 행 하나를 클릭해 선택한 뒤 누르면 그 플러그인 <strong>폴더 전체</strong>를 지운다. 비활성화(체크박스 해제)와 달리 되돌릴 수 없어서 확인 대화상자를 거친다. 이때 그 플러그인이 동봉했던 니들 이미지도 <code>Scripts\Needles\</code>에서 같이 지우되, <strong>다른 남아있는 플러그인이 같은 파일명을 쓰고 있거나 <code>NeedleRegistry.ahk</code>에 등록된 코어 니들 이미지명과 같으면 지우지 않는다</strong>(둘 중 하나라도 확실치 않으면 안 지우는 쪽을 택함 - <code>Logs\Plugins.txt</code>에 왜 안 지웠는지 남는다).</li>
+  <li><strong>적용/저장</strong>: 체크박스 상태를 각 <code>plugin.ini</code>의 <code>Enabled</code>에 즉시 쓴다. 다음 StartBot부터 반영되고, 지금 떠있는 워커에는 영향 없다.</li>
+</ul>
+
+<h2>예제 12개 (전부 <code>docs\Plugin\examples\</code>에 있음, 기본 <code>Enabled=0</code>)</h2>
+<p>써보려면 <code>Plugins\</code>로 폴더째 복사하고 <code>plugin.ini</code>에서 <code>Enabled=1</code>로.</p>
+<table>
+<tr><th>폴더</th><th>보여주는 것</th></tr>
+<tr><td><code>HelloWorld</code></td><td>플러그인이 실제로 로드/발화되는지 확인만 하는 가장 단순한 예제 - <code>RunPhase.before</code>에서 <code>MsgBox</code>로 "Hello World"를 한 번만 띄움(무인 봇에서 반복 발화 위험 경고 포함, 실제 알림용으로는 <code>this.Log()</code>/<code>LogInfo</code> 등을 쓸 것)</td></tr>
+<tr><td><code>HelloPacks</code></td><td>최소 구성 - <code>PackOpening</code>의 <code>afterEvent</code> 하나만 구현, 등록문/<code>__New()</code> 없이 동작</td></tr>
+<tr><td><code>WonderpickWatcher</code></td><td><code>Wonderpick</code> 하나만 구현 - <code>afterEvent</code>에서 <code>ctx.context</code>/<code>ctx.picked</code>를 로그하고 누적 완료 횟수를 셈</td></tr>
+<tr><td><code>FriendAddWatcher</code></td><td><code>FriendAdd</code>의 <code>afterEvent</code>+<code>onItem</code>만 구현 - 완료 시 처리된 친구 수, 항목별 성공/실패 상태를 로그(<code>onItem</code> 사용법을 보여주는 예제 겸함)</td></tr>
+<tr><td><code>FriendLimitAlert</code></td><td>코어 API 실사용(<code>FindImageWithAction</code>, 기존 니들 재사용) + static 쓰로틀(60초 쿨다운)로 친구 10명 초과 시에만 알림</td></tr>
+<tr><td><code>PackCounter</code></td><td><code>SaveValue</code>/<code>LoadValue</code>로 재시작 생존 누적 카운트, <code>GetPlugin</code>으로 다른 플러그인이 읽어갈 수 있는 <code>GetTotal()</code> 공개 메서드</td></tr>
+<tr><td><code>EventShowcase</code></td><td><code>FriendAdd</code> 하나에 집중해 <code>beforeEvent</code>(<code>TimerStart</code>)/<code>onItem</code>(항목별 로그)/<code>afterEvent</code>(<code>TimerEnd</code>+<code>Dump</code>+<code>SessionRead</code>) 등 다양한 기법을 한 클래스에 시연</td></tr>
+<tr><td><code>FriendAddHistory</code></td><td><code>FriendAdd.onItem</code>+<code>afterEvent</code>로 언제 어느 계정에서 어떤 친구 ID를 어떤 결과로 신청했는지 <code>Logs\Plugins\FriendAddHistory.txt</code>에 누적 기록(엔진 자동 로그와 별개의 전용 이력 파일 - 직접 <code>FileAppend</code> 사용례). 파일 기록 로직은 같은 폴더의 <code>HistoryFile.ahk</code>에 별도 클래스로 분리해서 <code>#Include</code>로 가져오는 예제도 겸함(커스텀 클래스를 다른 파일로 두는 예제 - 같은 파일 안에 두는 예제는 <code>TradeableCardForwarder</code> 참고)</td></tr>
+<tr><td><code>TradeableCardForwarder</code></td><td><code>FoundTradeableCard.after</code>에서 발견한 카드 정보를 개인 Discord 웹훅(<code>SaveValue</code>/<code>LoadValue</code>로 저장한 커스텀 <code>webhookUrl</code>)으로 포워딩 - <code>LogToDiscord</code>의 <code>altWebhookURL</code> 인자 + <code>ctx.Get()</code> 실사용 예제. 같은 <code>main.ahk</code> 안에 <code>Plugin</code>을 상속 안 하는 보조 클래스(<code>RarityBreakdown</code>)를 직접 정의해서 쓰는 예제도 겸함(plugin.ini의 <code>Class=</code>는 파일당 진입 클래스 1개만 가리킬 뿐, 그 파일 안에 다른 클래스/함수를 얼마든지 둘 수 있다)</td></tr>
+<tr><td><code>StuckLogcatDumper</code></td><td><code>StuckRestart.before</code>에서 <code>session.adb.RunAdbCommand("logcat -d", true)</code>로 안드로이드 로그캣 전체를 받아 <code>Logs\Plugins\&lt;yyMMdd&gt;_&lt;HHmmss&gt;_&lt;instanceNo&gt;_logcat.log</code>로 저장하고 Discord로 알림</td></tr>
+<tr><td><code>GiftPackTracker</code></td><td><code>PackOpening.after</code>의 <code>stopEarly</code> 필드로 선물팩/일반팩 통계를 <code>SaveValue</code>로 분리 집계 - ctx가 리터럴이 아니라 <code>result</code> 객체 그 자체인 타겟의 사용례</td></tr>
+<tr><td><code>AccountRetiredArchiver</code></td><td><code>AccountExhausted.after</code>에서 <code>Screenshot()</code>으로 증거 보관 + <code>deleteMethod</code>가 <code>"Inject Rewards"</code>일 때만 <code>SessionWrite("keepAccount", true)</code> 게이트 사용</td></tr>
+</table>
+<div class="note">
+<strong>주의</strong>: <code>FriendAddWatcher</code>/<code>FriendLimitAlert</code>/<code>EventShowcase</code> 셋 다 <code>hookTarget="FriendAdd"</code> + <code>afterEvent</code>를 구현한다 - 이 중 둘 이상을 동시에 <code>Plugins\</code>에 넣고 켜면 "타겟+메서드 충돌" 규칙(클래스명 알파벳순 승자)에 걸려서 <code>EventShowcase</code>만 살아남고 나머지의 <code>afterEvent</code>는 조용히 무시된다(각자 <code>Logs\Plugins.txt</code>에 "밀려 무시됨" 로그는 남음). 예제가 고장난 게 아니라 의도된 안전장치 동작이다 - 한 번에 하나씩만 켜서 써볼 것.
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTCGPB Plugin Guide</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #f4f5f7;
+    --fg: #1c1f26;
+    --fg-muted: #5b6270;
+    --accent: #3a6ff7;
+    --border: #dfe3ea;
+    --code-bg: #f0f2f6;
+    --table-head: #eef1f6;
+    --warn-bg: #fff4e5;
+    --warn-border: #f0b95a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161c;
+      --bg-alt: #1b1e26;
+      --fg: #e6e8ee;
+      --fg-muted: #9aa1b0;
+      --accent: #7aa2ff;
+      --border: #2c303b;
+      --code-bg: #1f2330;
+      --table-head: #232734;
+      --warn-bg: #2b2412;
+      --warn-border: #a87a2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    line-height: 1.65;
+  }
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin: 0 0 8px;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 12px;
+  }
+  h2 {
+    font-size: 1.25rem;
+    margin: 40px 0 14px;
+    color: var(--accent);
+  }
+  p { color: var(--fg); }
+  code {
+    font-family: "Cascadia Code", Consolas, "D2Coding", monospace;
+    background: var(--code-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--table-head); }
+  ul, ol { padding-left: 1.4em; }
+  li { margin: 6px 0; }
+  .note {
+    background: var(--warn-bg);
+    border-left: 4px solid var(--warn-border);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    margin: 14px 0;
+    font-size: 0.94rem;
+  }
+  .muted { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>PTCGPB Plugin Guide</h1>
+<p class="muted">English edition of docs\Plugin\README.md - content is equivalent.</p>
+
+<div class="note">
+This document and the example code live in <strong><code>docs\Plugin\</code></strong>, not in
+the repo root's <code>Plugins\</code> (moved 2026-08-09) - because even example plugins risk
+being accidentally activated if they sit in the <code>Plugins\</code> folder that actually
+gets scanned. <strong>To try an example, copy the whole folder you want from
+<code>docs\Plugin\examples\</code> and paste it into the repo root's <code>Plugins\</code>
+folder</strong> - <code>Plugins\&lt;copied folder name&gt;\plugin.ini</code> and
+<code>main.ahk</code> must survive the copy intact.
+</div>
+
+<p>Each subfolder under the repo root's <code>Plugins\</code> folder is one plugin. Every time
+the bot starts (<code>StartBot</code>), <code>PluginEngine_GenerateManifest()</code> in
+<code>PTCGPB.ahk</code> scans that folder and, for every plugin that passes validation,
+generates instantiation code into <code>Scripts\_plugins.g.ahk</code> as well, which the
+workers (<code>1.ahk</code> and its clones <code>2.ahk</code>, <code>3.ahk</code>, ...) then load.</p>
+
+<h2>Minimal Setup</h2>
+<pre><code>Plugins\
+  MyPlugin\
+    plugin.ini
+    main.ahk</code></pre>
+
+<p><strong><code>plugin.ini</code></strong>:</p>
+<pre><code>[Plugin]
+Name=MyPlugin
+Class=MyPlugin
+Main=main.ahk
+Enabled=1</code></pre>
+
+<ul>
+  <li><code>Name</code>: <strong>must exactly match the folder name</strong>. If it doesn't, the loader simply skips it (it won't be included in <code>Scripts\_plugins.g.ahk</code>, and the reason is logged to <code>Logs\Plugins.txt</code>).</li>
+  <li><code>Class</code>: <strong>a new key</strong> - specifies which class in <code>main.ahk</code> to use. The class name doesn't have to match <code>Name</code> (the folder name); you're free to name it however you like.</li>
+  <li><code>Main</code>: the entry file. Defaults to <code>main.ahk</code> if omitted.</li>
+  <li><code>Enabled</code>: set to <code>0</code> to turn the plugin off without deleting the folder. Defaults to <code>1</code> if omitted.</li>
+  <li><code>Instances</code> (optional): a comma-separated list of instance numbers to register hooks for only those instances (e.g. <code>Instances=3,5</code>). If omitted, applies to all instances.</li>
+</ul>
+
+<p><strong><code>main.ahk</code></strong>: declares exactly one class, named <strong>exactly the same as
+<code>Class</code></strong>, that inherits from <code>Plugin</code> (<code>extends Plugin</code>). Example (verbatim
+from <code>docs\Plugin\examples\HelloPacks\main.ahk</code>):</p>
+<pre><code>class HelloPacks extends Plugin {
+    static hookTarget := "PackOpening"
+
+    afterEvent(ctx) {
+        this.Log("Pack opening detected")
+    }
+}</code></pre>
+
+<p>That's it - there's no separate registration call to make. Declare which feature to
+attach to via <code>static hookTarget</code>, then override whichever of
+<code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code> that target supports and that you need,
+from the catalog table below. The engine creates an instance at load time and calls it
+automatically.</p>
+
+<h2>Hook Target Catalog (17)</h2>
+<p>Where a plugin "attaches" is decided by <code>static hookTarget</code>. In the table below,
+<code>before</code> corresponds to <code>beforeEvent(ctx)</code>, <code>after</code> to <code>afterEvent(ctx)</code>, and
+<code>onItem</code> to <code>onItem(ctx)</code> - implement only whichever of the methods that target
+supports that you actually need.</p>
+<table>
+<tr><th>hookTarget</th><th>Supported Methods</th><th>ctx</th><th>Actual Fire Site</th></tr>
+<tr><td><code>RunPhase</code></td><td>before+after</td><td><code>{phase}</code> / <code>{phase, state}</code></td><td><code>1.ahk</code> main loop</td></tr>
+<tr><td><code>Wonderpick</code></td><td>before+after</td><td><code>{context}</code> / <code>{context, picked?}</code></td><td><code>PackOpeningRun.ahk</code> OpenPacks/Finish</td></tr>
+<tr><td><code>FriendAdd</code></td><td>before+after+<strong>onItem</strong></td><td><code>{renew}</code> / <code>{count, renew}</code>, onItem: <code>{index, total, id, status}</code></td><td><code>FriendManager.AddFriends()</code> - before fires right after <code>SetActivity</code>, onItem fires for every attempt result per friend ID, after fires at the end. <code>renew</code> is passed straight through from the <code>AddFriends(renew:=false,...)</code> argument (distinguishes initial add vs. renewal)</td></tr>
+<tr><td><code>FriendRemove</code></td><td>before+after+<strong>onItem</strong></td><td><code>{}</code> / <code>{count}</code>, onItem: <code>{index, status}</code></td><td><code>FriendManager.RemoveFriends()</code> - before fires right after <code>SetActivity</code>, onItem fires per item processed, after fires at the end</td></tr>
+<tr><td><code>InstanceRestart</code></td><td>before+after</td><td><code>{usage, mode}</code> / <code>{}</code></td><td><code>PackOpeningRun.Prepare()</code> - the restart segment triggered by exceeding the VRAM threshold</td></tr>
+<tr><td><code>DailyMission</code></td><td>before+after</td><td><code>{withExtraPack}</code> / <code>{withExtraPack, dailyRewardsClaimed}</code></td><td><code>PackOpeningRun.Finish()</code> - two call sites for the daily mission (standalone / bundled with the extra pack), distinguished by <code>withExtraPack</code></td></tr>
+<tr><td><code>SpecialMission</code></td><td>before+after+<strong>onItem</strong></td><td><code>{}</code> / <code>{}</code>, onItem: <code>{id, status}</code></td><td>The special-mission segment in <code>PackOpeningRun.Finish()</code>; onItem fires for each per-event claim inside <code>ClaimVisibleEventRewards</code> (<code>MissionAndRewards.ahk</code>)</td></tr>
+<tr><td><code>Gift</code></td><td>before+after</td><td><code>{}</code> / <code>{giftClaimed, openedGiftPack}</code></td><td><code>PackOpeningRun.Finish()</code> - the gift-claiming segment</td></tr>
+<tr><td><code>Hourglass</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td><code>PackOpeningRun.Finish()</code> - the hourglass-consuming segment</td></tr>
+<tr><td><code>Showcase</code></td><td>before+after+<strong>onItem</strong></td><td><code>{remaining}</code> / <code>{remaining}</code>, onItem: <code>{index, total, id}</code></td><td>The segment in <code>PackOpeningRun.Finish()</code>; onItem fires for each ID iterated in <code>showcaseLikes</code> (<code>FriendManager.ahk</code>). The <code>remaining</code> in after is the same value as in before (the count remaining before the like attempts)</td></tr>
+<tr><td><code>PackOpening</code></td><td>after only</td><td>The pack-opening result + <code>stopEarly</code></td><td><code>1.ahk</code> - fires repeatedly, once per pack, so there's no notion of an activity segment here, hence no before. ctx is the <code>result</code> object returned by <code>EvaluatePack()</code> itself (includes <code>cards</code>/<code>pack</code>/<code>shinedust</code>/<code>lang</code>/<code>country</code>/<code>raw</code>) with <code>stopEarly</code> (whether this was an early-return path such as opening a gift pack, passed straight through from the <code>CheckPack(stopEarly:=false)</code> argument) layered on top</td></tr>
+<tr><td><code>GodPack</code></td><td>before+after(<strong>after is best-effort</strong>)</td><td><code>{validity, cards, finalizeAccount}</code> / <code>{validity, cards, screenshot, finalizeAccount}</code></td><td>before = at queueing time, after = right after <code>FinalizeInjectedGodPackAccount</code> and right before <code>restartGameInstance</code>. If a stuck-restart occurs between queueing and flush, after may never fire at all. By the time after fires, the corresponding pending values in the session have already been cleared, so these 4 fields - including <code>screenshot</code> (a screenshot path string, can be <code>""</code>) - are the only way a plugin can see those values</td></tr>
+<tr><td><code>AccountExhausted</code></td><td>after only</td><td><code>{deleteMethod}</code></td><td><code>PackOpeningRun.Prepare()</code> - an instantaneous determination, no before</td></tr>
+<tr><td><code>StuckRestart</code></td><td><strong>before only</strong></td><td><code>{reason, callerFile, callerLine, RL}</code></td><td>The isStuck branch in <code>1.ahk</code> - the process dies afterward via <code>SafeReload</code>, so after is inherently impossible. <code>callerFile</code>/<code>callerLine</code> identify the call site that invoked <code>restartGameInstance()</code> (obtained via <code>Error("", -1)</code>); <code>RL</code> indicates whether to reload after the restart - either a boolean or a special reason string (e.g. <code>"GodPack"</code>)</td></tr>
+<tr><td><code>BeginnerMission</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td>Right before/after the <code>HomeAndMission()</code> call inside <code>PackOpeningRun.GrindBeginnerMissions()</code></td></tr>
+<tr><td><code>Tutorial</code></td><td>before+after</td><td><code>{}</code> / <code>{}</code></td><td>The <code>DoTutorial</code> call site (<code>PackOpeningRun.ahk</code>)</td></tr>
+<tr><td><code>FoundTradeableCard</code></td><td>before+after</td><td>OCR path: <code>{count, foundCards, cards, pack, lang, country, source:"ocr"}</code> / border-fallback path: <code>{count, source:"border"}</code></td><td>Two call sites: <code>FoundTradeableNew</code> inside <code>CheckPack()</code> in <code>1.ahk</code> (s4t new format, successful OCR recognition) and <code>FoundTradeable</code> inside <code>CheckPackFallback()</code> (border-recognition fallback after OCR fails) - these are mutually exclusive branches, so they're grouped under a single hookTarget. <code>count</code> is the number of cards found. The border-fallback path has no <code>foundCards</code>/<code>cards</code>/<code>pack</code>/<code>lang</code>/<code>country</code> at all (those values simply don't exist because OCR failed) - use <code>source</code> to tell the paths apart, and read any potentially-missing field via <code>ctx.Get()</code></td></tr>
+</table>
+<div class="note">
+The <code>count</code> in <code>FriendAdd.after</code> is not the number of successful
+friend adds - it's the total number of IDs attempted
+(<code>session.get("friendIDs").Length</code>). Don't mistake it for a success count
+just from the name.
+</div>
+<div class="note">
+The ctx for <code>Hourglass</code>/<code>Tutorial</code>/<code>BeginnerMission</code>/<code>Wonderpick</code>
+(EventMission path) is currently empty because the underlying functions
+(<code>SpendAllHourglass()</code>/<code>DoTutorial()</code>/<code>HomeAndMission()</code>/<code>DoWonderPickOnly()</code>)
+don't capture a return value at all, so core has no local variable to expose - this isn't
+just a matter of extending ctx, it requires the separate, prerequisite work of capturing
+those return values first, so it was left out of this scope (revisit if/when it's actually
+needed).
+</div>
+
+<h2>The 3 General-Purpose Methods</h2>
+<p>Inheriting from <code>Plugin</code> lets you override the following 3 methods (the parent
+defaults are all no-ops):</p>
+<ul>
+  <li><code>beforeEvent(ctx)</code> - called right before the action starts, if that hookTarget supports <code>before</code>.</li>
+  <li><code>afterEvent(ctx)</code> - called right after it finishes, if it supports <code>after</code>.</li>
+  <li><code>onItem(ctx)</code> - called once per item processed (a friend ID, an event name, a showcase ID, etc.), if it supports <code>onItem</code> (<code>FriendAdd</code>/<code>FriendRemove</code>/<code>SpecialMission</code>/<code>Showcase</code>).</li>
+</ul>
+<p>Within one class, you can implement <strong>as many of that <code>hookTarget</code>'s supported
+methods as you like at once</strong> (minimum 1 - implementing nothing fails validation; the
+maximum is however many methods that target supports). Implementing a method the target
+doesn't support isn't an error - it's simply never called (only a warning is logged
+during validation).</p>
+
+<h2><code>ctx.Get(key, default)</code> - Safe Access to Conditional Fields</h2>
+<p>Many of the fields in the table above are conditional - for example, <code>state</code>
+in <code>RunPhase.after</code> only exists during the Prepare/Finish phases, and
+<code>cards</code> in <code>GodPack.after</code> is an empty string on the fallback path. Reading
+a conditional field directly as <code>ctx.fieldName</code> throws a
+<code>PropertyError</code> in AHK v2 the moment it isn't present.</p>
+<p><code>Fire()</code> automatically attaches a <code>Get(key, default := "")</code> method to
+every <code>ctx</code> right before calling the hook - the same convention as
+<code>session.get()</code>/<code>botConfig.get()</code>:</p>
+<pre><code>value := ctx.Get("state", "")       ; "" instead of an exception if missing
+count := ctx.Get("count", 0)</code></pre>
+<p><strong>Fields that are guaranteed to always be present</strong> (e.g. <code>id</code> in
+<code>FriendAdd.onItem</code>, <code>phase</code> in <code>RunPhase.before</code>) are safe to read
+directly as <code>ctx.fieldName</code> - reserve <code>ctx.Get()</code> for conditional
+fields. <code>Plugin.CTX_SHAPES</code> in <code>Plugin.ahk</code> is the actual source of truth
+for "target.when → the complete set of field names that may be present" (this document is
+a prose copy of that). If code loads a field not present in <code>CTX_SHAPES</code>,
+<code>PluginEngine.Fire()</code> automatically logs a warning to
+<code>Logs\Plugins.txt</code> - a signal that "the docs/catalog have fallen behind the
+code."</p>
+<p>Caution: because <code>Fire()</code> attaches <code>Get</code> to <code>ctx</code> via
+<code>DefineProp</code> every single time, serializing <code>ctx</code> itself wholesale with
+<code>JSON.stringify(ctx)</code> (including via <code>Dump(ctx)</code>) enumerates
+<code>Get</code> right along with everything else, which can subtly trip up an existing
+bug in <code>Scripts/lib/JSON.ahk</code> (property enumeration and the count used to decide
+comma placement use different criteria, leaving a trailing comma behind, among other
+things). When sending <code>ctx</code> somewhere external - a Discord webhook, for
+instance - don't pass <code>ctx</code> wholesale; pick out only the fields you need into a
+new object first.</p>
+
+<h2>4 Developer Convenience Functions</h2>
+<p>Separate from the gate functions (<code>SessionRead</code>, etc.), <code>Plugin</code> provides 4
+instance methods for observation/debugging during development. <strong>Call these only
+from within <code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code></strong> - the loader doesn't
+populate <code>this._name</code> until after the instance constructor (<code>__New()</code>)
+finishes running, so if you override <code>__New()</code> and call these functions inside it,
+<code>_name</code> is still empty and things break (if you must override <code>__New()</code>, call
+<code>super.__New()</code> first - otherwise the <code>_timers</code> Map won't exist either, and
+<code>TimerStart</code>/<code>TimerEnd</code> will break too).</p>
+<table>
+<tr><th>Method</th><th>Purpose</th><th>Rationale/Reuse</th></tr>
+<tr><td><code>Log(message, level := "info")</code></td><td>Records an observation-worthy value to a separate file - for "I noticed something worth logging while chasing a hang." Writes to <strong><code>Logs\Plugins_Dev.txt</code></strong>, kept separate from the engine's automatic log (<code>Logs\Plugins.txt</code>, which records loads/entries/results) - because the automatic log can run to hundreds of lines per session, this keeps developer-authored messages from getting buried in it. <code>level</code> follows the existing levels: <code>"info"</code>/<code>"warn"</code>/<code>"debug"</code>, etc.</td><td>Simply calls <code>LogMessage(level, message, logFile)</code> from <code>Scripts/lib/Logging.ahk</code> (no new logging mechanism)</td></tr>
+<tr><td><code>TimerStart(label)</code> / <code>TimerEnd(label)</code></td><td>Measures elapsed time between two points in code - put <code>TimerStart("x")</code> before and <code>TimerEnd("x")</code> after, and it computes the elapsed ms in between, automatically logs it via <code>Log()</code>, and also returns it. Multiple labeled segments can be measured concurrently (per instance - labels don't collide between plugins).</td><td>Built on <code>A_TickCount</code> - especially useful for self-diagnosing violations of the "no blocking for several seconds or more" rule</td></tr>
+<tr><td><code>Dump(value, label := "")</code></td><td>Serializes an object/array/Map into a human-readable string and logs it via <code>Log()</code>. AHK v2 has nothing like <code>console.log</code>, so this is handy for inspecting a composite value like <code>ctx.cards</code> (an array) - <code>ctx.cards.ToString()</code> gives you a meaningless value.</td><td>Reuses <code>JSON.stringify(obj, expandlevel, space)</code> from <code>Scripts/lib/JSON.ahk</code> (no new serialization logic)</td></tr>
+<tr><td><code>Screenshot(label := "")</code></td><td>Captures the current emulator window, saves it to <code>Screenshots\Plugins\</code>, and logs the path via <code>Log()</code> - for "I think something hung, and I want to see what the screen looked like at that moment." Core already uses the exact same pattern when it detects a stuck state (<code>SaveStuckScreenshot</code>, saving to <code>Screenshots\Stuck\</code>) - this reuses that approach for plugins, just with a separate folder.</td><td><code>GDIPService.CaptureWindow(hWnd)</code> + <code>Gdip_SaveBitmapToFile</code></td></tr>
+</table>
+<p>All 4 fail silently (returning an empty value/0) and merely log if something goes wrong
+(window not found, a typo'd label, etc.) - since it would be self-defeating for a
+developer convenience function to throw an exception that trips the three-strikes rule
+and disables the very hook you were trying to observe, they're handled defensively
+internally.</p>
+
+<h2>Target+Method Conflict Rule</h2>
+<p>If 2 or more plugins implement the same <code>hookTarget</code> + the same method
+(<code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code>), only exactly 1 of them (the winner) is
+allowed to actually run <strong>for that method</strong> (the rest are ignored).</p>
+<ul>
+  <li><strong>Determining the winner</strong>: <strong>alphabetical order of class name</strong>
+  (ascending - the first one wins) - based on <strong>class name</strong>, not folder name.
+  Folder names are usually the user's nickname and hard to adjust, but class names are
+  freely chosen by the developer, so if you want to control your own priority, prefix
+  the name with something like <code>A_</code>/<code>Z_</code>.</li>
+  <li><strong>What happens to the loser</strong>: not the whole plugin - <strong>only the call
+  to the conflicting method is skipped</strong>. Any other (non-conflicting) method the
+  same plugin implements on the same target, or a separate plugin built against a
+  different hookTarget entirely, is completely unaffected.</li>
+  <li><strong>Relationship to the three-strikes rule - no bench player</strong>: if the winner
+  later fails 3 times in a row and gets disabled for the rest of the session, that
+  <code>target.when</code> simply stops being called - <strong>the runner-up does not take
+  over</strong>. Conflict resolution is computed exactly once, at <code>StartBot</code>
+  (load time), and never recalculated at runtime - if you need to swap out the winner,
+  the user has to directly fix or disable the winning plugin.</li>
+  <li><strong>Exception: <code>PropertyError</code>/<code>MethodError</code> disable immediately, on
+  the first failure</strong>: the "3 consecutive failures" rule above applies to ordinary
+  exceptions (a transient error like a network timeout). A
+  <code>PropertyError</code>/<code>MethodError</code> (accessing a property/method that
+  doesn't exist) is deterministic - retrying produces the exact same failure every time,
+  so instead of the 3-strike grace period, <strong>a single failure</strong> disables that
+  hook for the rest of the session. Practical implication: a plugin that reads a
+  conditional field (e.g. <code>picked</code> in <code>Wonderpick.after</code>, which is only
+  present on the CreateBots path and absent on the EventMission path) directly as
+  <code>ctx.fieldName</code> will die for the entire session the very first time it's
+  called without that field - using <code>ctx.Get(key, default)</code>, described above,
+  avoids this failure mode.</li>
+  <li><strong>Results can differ per instance</strong>: if the <code>Instances=</code> ini key
+  makes different plugins participate on different instances, the winner can differ from
+  worker to worker. The Plugin Manager UI's static check only shows conflicts "assuming
+  every plugin is registered on every instance," so the actual per-worker outcome may
+  differ.</li>
+  <li><strong>Plugin Manager UI display</strong>: the status column shows ⚠️ (structurally
+  valid, but some methods are inactive because they lost to another plugin), and
+  hovering over that row shows a color-highlighted tooltip indicating which method lost
+  to whom (see the "Plugin Manager UI" section below).</li>
+</ul>
+
+<h2>Hook Execution Timeout</h2>
+<p>If a plugin hook hangs and never returns (an infinite loop, <code>Sleep</code> misuse,
+etc.), the entire worker hangs along with it - the engine has a watchdog to catch this.
+If a hook runs longer than <strong><code>HOOK_TIMEOUT_MS</code> (5 minutes)</strong> without
+finishing, the worker is force-restarted by riding the existing stuck-recovery path
+(<code>restartGameInstance</code>, saving a screenshot via <code>SaveStuckScreenshot</code>,
+scheduling account cleanup, etc.) rather than some new restart path.</p>
+<div class="note">
+<strong>Limitation (be aware of this)</strong>: because AHK v2 is single-threaded, this
+watchdog (a <code>SetTimer</code> callback) only fires at points where the currently
+running thread is "interruptible" (<code>Sleep</code>, the message pump, etc.). A pure
+tight loop with not a single <code>Sleep</code> in it (<code>Loop { }</code> with no wait at
+all) cannot be interrupted even by this watchdog - it's <strong>the best available
+defense, not a guaranteed forced termination</strong>. That said, all of this project's
+actual polling code (<code>FindImageWithAction</code>, etc.) is <code>Sleep</code>-based, so
+in practice this catches most "hang" situations.
+</div>
+
+<h2>The 4 <code>ctx.phase</code> Values - Only Present on <code>RunPhase</code>'s before/after</h2>
+<p>What a plugin "attaches" to is chosen via <code>static hookTarget</code> (e.g. declaring
+<code>hookTarget="RunPhase"</code> attaches to <code>RunPhase</code>'s before/after).
+<code>phase</code> is, specifically for the <code>RunPhase</code> target, simply a
+<code>ctx.phase</code> value that tells you <strong>which stage core is currently running
+through</strong>. It maps 1:1 to the 4 static methods on
+<code>module\classes\PackOpeningRun.ahk</code>.</p>
+<table>
+<tr><th><code>ctx.phase</code> value</th><th>Corresponding core method</th><th>What this stage does</th></tr>
+<tr><td><code>Prepare</code></td><td><code>PackOpeningRun.Prepare()</code></td><td>Pack draw, waiting for a server reset, VRAM-restart decision, account loading, tutorial</td></tr>
+<tr><td><code>OpenPacks</code></td><td><code>PackOpeningRun.OpenPacks()</code></td><td>Wonderpick, adding friends, pack selection/opening, daily mission</td></tr>
+<tr><td><code>GrindBeginnerMissions</code></td><td><code>PackOpeningRun.GrindBeginnerMissions()</code></td><td>Repeated packs/hourglasses for beginner missions</td></tr>
+<tr><td><code>Finish</code></td><td><code>PackOpeningRun.Finish()</code></td><td>Special missions/gifts/hourglass consumption/friend removal/showcase/account saving</td></tr>
+</table>
+<p class="muted">Identical to the core method names - matches the actual call sites in
+<code>1.ahk</code>, e.g. <code>Fire("RunPhase", "before"/"after", {phase: "Prepare"})</code>,
+verbatim.</p>
+<p class="muted">Example: pick out only the stage you care about, e.g.
+<code>beforeEvent(ctx) { if (ctx.phase != "OpenPacks") return ... }</code>.</p>
+
+<h2>The 11 <code>activity</code> Values - Unrelated to Plugins, Exclusive to the Cockpit Dashboard</h2>
+<div class="note">
+<strong>This is the easiest thing to get confused about</strong>: <code>activity</code> is a
+value used by an entirely different piece of code
+(<code>module\classes\CockpitInstancePush.ahk</code>), not the plugin system
+(<code>PluginEngine.ahk</code>). Each instance writes "what it's currently doing in detail"
+(e.g. adding friends, claiming a gift) into the <code>[Cockpit]</code> section of its own
+<code>Scripts\N.ini</code>, and the Cockpit dashboard reads that and displays it on screen.
+<strong>This value never makes it into a plugin's <code>ctx</code> at all</strong> -
+<code>RunPhase</code>'s <code>ctx</code> only has <code>phase</code>, no <code>activity</code>. The list is
+included here purely for reference.
+</div>
+<table>
+<tr><th>activity value</th><th>Where core uses it</th></tr>
+<tr><td><code>RestartingInstance</code></td><td>Restarting an instance due to exceeding VRAM (Prepare)</td></tr>
+<tr><td><code>AddingFriends</code></td><td>Adding friends (FriendManager.AddFriends)</td></tr>
+<tr><td><code>RemovingFriends</code></td><td>Removing friends (FriendManager.RemoveFriends)</td></tr>
+<tr><td><code>WonderpickCreateBots</code></td><td>Wonderpick in progress, Create Bots mode (OpenPacks)</td></tr>
+<tr><td><code>ClaimingDailyMission</code></td><td>Claiming only the daily mission (4-hour hourglass) (OpenPacks)</td></tr>
+<tr><td><code>ClaimingDailyMissionAndExtraPack</code></td><td>Claiming the daily mission + extra pack (OpenPacks)</td></tr>
+<tr><td><code>WonderpickEventMission</code></td><td>Wonderpick in progress, for an event mission (Finish)</td></tr>
+<tr><td><code>ClaimingSpecialMission</code></td><td>Claiming special-mission rewards (Finish)</td></tr>
+<tr><td><code>ReceivingGift</code></td><td>Claiming a gift (Finish)</td></tr>
+<tr><td><code>ConsumingHourglass</code></td><td>Consuming an hourglass (Finish)</td></tr>
+<tr><td><code>ShowcaseLiking</code></td><td>Liking showcase entries (Finish)</td></tr>
+</table>
+
+<h2>Cross-Plugin Reference</h2>
+<p>To get another plugin's instance, use <code>this.GetPlugin("OtherPluginName")</code>
+(an instance method - internally a thin wrapper around <code>PluginEngine.GetPlugin</code>).
+The name is the <strong>folder name</strong> (the <code>Name</code> in <code>plugin.ini</code>), not the
+class name. It returns <code>""</code> if that plugin is disabled or doesn't exist, so you
+must always guard it, e.g. <code>if (other := this.GetPlugin("X"))</code>. Call this
+<strong>only from inside a hook</strong> (<code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code>) -
+calling it at file top level may hit a point where that plugin hasn't loaded yet,
+depending on include order.</p>
+
+<h2>State Persistence - Two Layers</h2>
+<ul>
+  <li><strong>Values that only need to survive for the session</strong>: use an
+  <strong>instance field</strong> on the class (<code>this.someField</code>) - since one
+  instance is created per plugin, <code>this.xxx</code> works fine. Plugin code lives
+  resident inside the worker process, so it already shares the same lifetime as the bot's
+  session (<code>session</code>) - no separate registration/round-trip is needed.</li>
+  <li><strong>Values that must survive a worker restart (reload/reconnect)</strong>: use
+  <code>this.SaveValue("key", value)</code> / <code>this.LoadValue("key", defaultValue)</code>.
+  These write to the <code>[Plugin_&lt;myFolderName&gt;]</code> section of the instance's
+  own <code>Scripts\N.ini</code> - the section name itself is the ownership boundary, so it
+  never mixes with another plugin's values.</li>
+</ul>
+
+<h2>Accessing Bot State (session/botConfig)</h2>
+<ul>
+  <li><strong>Reading</strong>: <code>this.SessionRead(key)</code>, <code>this.ConfigRead(key)</code> - both can be read freely.</li>
+  <li><strong>Writing</strong>: <code>this.SessionWrite(key, value)</code> - succeeds <strong>only for whitelisted keys</strong> (currently just <code>keepAccount</code>). A key not on the whitelist is silently rejected, and a warning is logged to <code>Logs\Plugins.txt</code>. <code>botConfig</code> has no write API at all (to persist settings, write <code>plugin.ini</code> directly).</li>
+  <li>If the value returned by <code>SessionRead()</code> is an object like an array/Map, <strong>treat it as read-only</strong> - mutating its internals corrupts core state directly.</li>
+</ul>
+
+<div class="note">
+This gate is a guardrail, not a security boundary. AHK v2 has no concept of private, so
+it can be bypassed by calling <code>session.set()</code> directly - its value lies purely
+in documenting the allowed scope in code and logging violations so diagnosis is faster.
+</div>
+
+<h2>Rules You Must Follow (violating these can hang or kill a worker)</h2>
+<ol>
+  <li>When calling <code>FindImageWithAction</code> inside a hook, <strong>you must always pass <code>count: 1</code> or <code>giveUpTime</code></strong>. Calling it with the defaults (<code>count: -1</code>, infinite polling) traps the worker inside that hook forever if the needle never appears.</li>
+  <li>Never call <code>ExitApp</code> / <code>Reload</code> / <code>Pause</code> - the worker dies/freezes immediately.</li>
+  <li>Never register <code>SetTimer</code> / <code>Hotkey</code> - interleaving with core's screen manipulation causes click races.</li>
+  <li>Never access an owner object like <code>session.run.xxx</code> directly - use only the gate functions described above.</li>
+  <li>Never do a blocking <code>Sleep</code> of several seconds or more - hooks run right in the middle of core's run loop.</li>
+  <li>Prefix your own plugin's global functions/variables/needle names (e.g. <code>MyPlugin_</code> or <code>EBC_</code>). A name collision with core or another plugin fails the load entirely (caught during the validation step below), excluding the whole plugin.</li>
+  <li>Call the gate functions (<code>SessionRead</code>/<code>SessionWrite</code>/<code>ConfigRead</code>/<code>SaveValue</code>/<code>LoadValue</code>/<code>GetPlugin</code>) and the developer convenience functions (<code>Log</code>/<code>TimerStart</code>/<code>TimerEnd</code>/<code>Dump</code>/<code>Screenshot</code>) <strong>only from within <code>beforeEvent</code>/<code>afterEvent</code>/<code>onItem</code></strong> - calling them inside <code>__New()</code> (the constructor) breaks because <code>this._name</code> isn't populated yet (see the "Developer Convenience Functions" section above).</li>
+</ol>
+
+<h2>Validation - Runs Automatically on Every StartBot</h2>
+<ol>
+  <li>Scan the folder, verify <code>Name</code> matches the folder name.</li>
+  <li>Verify the <code>Class=</code> key is present in <code>plugin.ini</code>, and check via regex that <code>main.ahk</code> contains a <code>class &lt;Class value&gt; extends Plugin</code> declaration.</li>
+  <li>Verify the <code>static hookTarget := "..."</code> value is one of the 17 entries in the hook target catalog above.</li>
+  <li>Check via regex that at least one of <code>beforeEvent(</code>/<code>afterEvent(</code>/<code>onItem(</code> is implemented → fails validation if none are. If a method the target doesn't support is implemented, it still passes, but only a warning is logged to <code>Logs\Plugins.txt</code> (not fatal - it simply never gets called).</li>
+  <li>Compute whether it conflicts with another (enabled, structurally valid) plugin that implements the same hookTarget+method (see the "Target+Method Conflict Rule" section above) - this result is exactly what the Plugin Manager UI's ⚠️ indicator and hover tooltip use.</li>
+  <li>Copy any bundled <code>.png</code> files only if they're not already present in <code>Scripts\Needles\</code> (shipped images are never overwritten).</li>
+  <li>Combine all previously-passed plugins with this candidate and check <code>1.ahk</code> as a whole without actually running it (parse-only) - if there's a problem, <strong>only this candidate</strong> is excluded, and the rest proceed as normal.</li>
+  <li>If anything gets excluded, a single tray notification is shown, and the reason (down to what needs to be fixed) is logged to <code>Logs\Plugins.txt</code>.</li>
+</ol>
+
+<p>Simply setting <code>Enabled=0</code> in <code>plugin.ini</code>, or deleting the folder, excludes
+the plugin starting with the next StartBot.</p>
+
+<h2>Plugin Manager UI (PTCGPB.ahk)</h2>
+<p>There's a management screen so you don't have to edit <code>plugin.ini</code> by hand:
+<strong>Main window → the 🧩 tools icon → Tools &amp; System Settings → 🧩 Plugin
+Manager</strong> button.</p>
+<ul>
+  <li><strong>List</strong>: shows every folder under <code>Plugins\</code> (including disabled ones). The leftmost checkbox toggles enabled state; the second column shows status - <strong>✅ OK</strong> (passed structural validation + no conflicts + not a dead plugin) / <strong>⚠️</strong> (structurally valid, but some methods are inactive because another plugin won the conflict - shown in the reason column as "afterEvent: lost to &lt;winning class name&gt;" - since the conflict winner is determined by class name, it's displayed by class name) / <strong>❌</strong> (structural validation itself failed + reason). Whether it can actually be loaded into a worker (syntax errors, etc.) isn't checked here - that's only confirmed at StartBot time.</li>
+  <li><strong>🔴 Dead plugin</strong>: if every method it implements is one that its <code>hookTarget</code> doesn't support - so none of them ever get called - its name gets a <code>🔴</code> prefix, the status column shows <code>❌ No callable methods</code>, and the checkbox is always drawn unchecked by default regardless of the <code>Enabled</code> value in <code>plugin.ini</code> (manually re-checking it isn't blocked - it's harmless anyway since no method ever fires).</li>
+  <li><strong>⚠️/🔴 row hover tooltip</strong>: hovering over the row shows a color-highlighted popup indicating which method lost to whom (a conflict), or which method isn't allowed on this target.</li>
+  <li><strong>🔄 Refresh</strong>: rescans the list. It's a pure read that doesn't touch any files, so it's fast.</li>
+  <li><strong>🗑 Delete</strong>: click a row to select it, then press this to delete that plugin's <strong>entire folder</strong>. Unlike disabling (unchecking the box), this can't be undone, so it goes through a confirmation dialog. This also deletes any needle images the plugin bundled from <code>Scripts\Needles\</code>, <strong>except when another remaining plugin uses the same filename, or it matches a core needle image name registered in <code>NeedleRegistry.ahk</code></strong> (if either is uncertain, it errs on the side of not deleting - and <code>Logs\Plugins.txt</code> records why it wasn't deleted).</li>
+  <li><strong>Apply/Save</strong>: writes the checkbox states immediately to each <code>plugin.ini</code>'s <code>Enabled</code>. Takes effect starting with the next StartBot; has no effect on workers already running.</li>
+</ul>
+
+<h2>12 Examples (all under <code>docs\Plugin\examples\</code>, <code>Enabled=0</code> by default)</h2>
+<p>To try one, copy the whole folder into <code>Plugins\</code> and set <code>Enabled=1</code> in its <code>plugin.ini</code>.</p>
+<table>
+<tr><th>Folder</th><th>What It Demonstrates</th></tr>
+<tr><td><code>HelloWorld</code></td><td>The simplest possible example, just confirming that a plugin actually loads/fires - pops a <code>MsgBox</code> saying "Hello World" exactly once from <code>RunPhase.before</code> (includes a warning about the risk of repeated pop-ups on an unattended bot; for real notifications, use <code>this.Log()</code>/<code>LogInfo</code>, etc.)</td></tr>
+<tr><td><code>HelloPacks</code></td><td>Minimal configuration - implements only <code>afterEvent</code> of <code>PackOpening</code>, works with no registration statement and no <code>__New()</code></td></tr>
+<tr><td><code>WonderpickWatcher</code></td><td>Implements only <code>Wonderpick</code> - logs <code>ctx.context</code>/<code>ctx.picked</code> in <code>afterEvent</code> and counts cumulative completions</td></tr>
+<tr><td><code>FriendAddWatcher</code></td><td>Implements only <code>afterEvent</code>+<code>onItem</code> of <code>FriendAdd</code> - logs how many friends were processed on completion and the per-item success/failure status (also serves as an example of <code>onItem</code> usage)</td></tr>
+<tr><td><code>FriendLimitAlert</code></td><td>Real use of core APIs (<code>FindImageWithAction</code>, reusing an existing needle) + a static throttle (60-second cooldown) that only alerts when friend count exceeds 10</td></tr>
+<tr><td><code>PackCounter</code></td><td>Uses <code>SaveValue</code>/<code>LoadValue</code> for a cumulative count that survives restarts, plus a public <code>GetTotal()</code> method other plugins can read via <code>GetPlugin</code></td></tr>
+<tr><td><code>EventShowcase</code></td><td>Focuses on <code>FriendAdd</code> alone and demonstrates several techniques in one class: <code>beforeEvent</code> (<code>TimerStart</code>), <code>onItem</code> (per-item logging), <code>afterEvent</code> (<code>TimerEnd</code> + <code>Dump</code> + <code>SessionRead</code>)</td></tr>
+<tr><td><code>FriendAddHistory</code></td><td>Uses <code>FriendAdd.onItem</code>+<code>afterEvent</code> to accumulate a record of when, on which account, which friend ID was requested, with what result, into <code>Logs\Plugins\FriendAddHistory.txt</code> (a dedicated history file separate from the engine's automatic log - a direct <code>FileAppend</code> usage example). The file-writing logic is factored out into a separate class in <code>HistoryFile.ahk</code> in the same folder, pulled in via <code>#Include</code> - also serves as an example of keeping a custom class in its own file (for an example that keeps it in the same file, see <code>TradeableCardForwarder</code>)</td></tr>
+<tr><td><code>TradeableCardForwarder</code></td><td>Forwards found-card info from <code>FoundTradeableCard.after</code> to a personal Discord webhook (a custom <code>webhookUrl</code> saved/loaded via <code>SaveValue</code>/<code>LoadValue</code>) - an example of real usage of <code>LogToDiscord</code>'s <code>altWebhookURL</code> argument plus <code>ctx.Get()</code>. Also serves as an example of directly defining and using a helper class that doesn't inherit <code>Plugin</code> (<code>RarityBreakdown</code>) inside the same <code>main.ahk</code> (plugin.ini's <code>Class=</code> only points to one entry class per file - a file can otherwise contain as many other classes/functions as you like)</td></tr>
+<tr><td><code>StuckLogcatDumper</code></td><td>From <code>StuckRestart.before</code>, pulls the full Android logcat via <code>session.adb.RunAdbCommand("logcat -d", true)</code>, saves it to <code>Logs\Plugins\&lt;yyMMdd&gt;_&lt;HHmmss&gt;_&lt;instanceNo&gt;_logcat.log</code>, and sends a Discord alert</td></tr>
+<tr><td><code>GiftPackTracker</code></td><td>Uses the <code>stopEarly</code> field of <code>PackOpening.after</code> to keep separate <code>SaveValue</code> tallies for gift packs vs. normal packs - a usage example for a target whose ctx is not a literal but the <code>result</code> object itself</td></tr>
+<tr><td><code>AccountRetiredArchiver</code></td><td>Preserves evidence via <code>Screenshot()</code> in <code>AccountExhausted.after</code>, plus uses the <code>SessionWrite("keepAccount", true)</code> gate, but only when <code>deleteMethod</code> is <code>"Inject Rewards"</code></td></tr>
+</table>
+<div class="note">
+<strong>Note</strong>: <code>FriendAddWatcher</code>/<code>FriendLimitAlert</code>/<code>EventShowcase</code> all 3
+implement <code>hookTarget="FriendAdd"</code> + <code>afterEvent</code>. If you drop 2 or more of
+these into <code>Plugins\</code> and enable them at the same time, the "target+method
+conflict" rule (alphabetical-by-class-name winner) kicks in, and only
+<code>EventShowcase</code> survives - the others' <code>afterEvent</code> is silently ignored
+(each one does still log a "lost, ignored" line to <code>Logs\Plugins.txt</code>). This
+isn't the examples being broken - it's the intended safety mechanism at work - enable
+only one at a time when trying them out.
+</div>
+
+</div>
+</body>
+</html>
