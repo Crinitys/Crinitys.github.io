@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTCGPB Crinity v2 — Architecture Document (English)</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 10.5pt; line-height: 1.55; color: #1a1a1a;
+    max-width: 900px; margin: 0 auto; padding: 24px;
+    background: #fff;
+  }
+  h1 { font-size: 21pt; border-bottom: 3px solid #2b6cb0; padding-bottom: 8px; }
+  h2 { font-size: 15pt; color: #2b6cb0; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 34px; page-break-after: avoid; }
+  h3 { font-size: 12pt; color: #2c5282; margin-top: 22px; page-break-after: avoid; }
+  h4 { font-size: 11pt; color: #444; margin-top: 16px; page-break-after: avoid; }
+  code { font-family: Consolas, monospace; font-size: 9.5pt; background: #f0f4f8; padding: 1px 4px; border-radius: 3px; }
+  pre { font-family: Consolas, monospace; font-size: 8.5pt; line-height: 1.35; background: #f7fafc; border: 1px solid #dde4ec; border-radius: 5px; padding: 10px 12px; overflow-x: auto; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; page-break-inside: auto; }
+  th { background: #2b6cb0; color: #fff; text-align: left; padding: 5px 8px; }
+  td { border: 1px solid #cbd5e0; padding: 4px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7fafc; }
+  .meta { color: #666; font-size: 9pt; margin-bottom: 20px; }
+  .kpi { display: inline-block; background: #ebf4ff; border: 1px solid #bcd7f5; border-radius: 4px; padding: 2px 9px; margin: 2px 3px; font-size: 9pt; }
+  .note { background: #fffbea; border-left: 4px solid #d69e2e; padding: 8px 12px; margin: 10px 0; font-size: 9.5pt; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 3px 0; }
+  .toc { background: #f7fafc; border: 1px solid #dde4ec; border-radius: 5px; padding: 12px 18px; }
+  .toc ol { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>PTCGPB Crinity v2 — Project Architecture Document</h1>
+<p class="meta">Repository: <code>D:\Store\Git\repo\PTCGPB_Crinity_v2</code> · Written: 2026-08-10 · Branch: master (as of commit c358470, plus the staged <code>Scripts\module\</code> folder reorganization) · Based on direct inspection of the actual source code</p>
+
+<p>
+<span class="kpi">146 .ahk source files (+13 plugin-example files under docs\)</span>
+<span class="kpi">19 domain classes</span>
+<span class="kpi">12 independent entry points</span>
+<span class="kpi">25 self-checks</span>
+<span class="kpi">159 needle registrations / 216 needle PNGs</span>
+<span class="kpi">73 mask PNGs</span>
+<span class="kpi">17 dashboard routes</span>
+<span class="kpi">17 plugin hookTargets / 35 ctx shapes</span>
+<span class="kpi">12 example plugins</span>
+</p>
+
+<div class="toc">
+<b>Table of Contents</b>
+<ol>
+<li>Project Overview</li>
+<li>Execution Topology — Entry Points and Process Model</li>
+<li>Full Directory Structure (incl. the module\ folder reorganization)</li>
+<li>Scripts\lib\ — Generic Library Layer</li>
+<li>Scripts\module\classes\ — All 19 Domain Classes in Detail</li>
+<li>Scripts\module\ — Core Modules by Folder</li>
+<li>The Screen Recognition Stack (4 GDI+ Layers)</li>
+<li>The Cockpit Monitoring Subsystem (incl. the Instance Push Channel)</li>
+<li>The Card Dashboard (HTTP Server) Subsystem (incl. the Cloudinary Migration)</li>
+<li>Execution Flow Diagrams</li>
+<li>Inter-module #Include Dependencies</li>
+<li>SelfChecks / dev Tools / Data Assets</li>
+<li>The Plugin System (module\Plugin\)</li>
+</ol>
+</div>
+
+<h2>1. Project Overview</h2>
+
+<h3>1.1 What the Bot Does</h3>
+<p>
+This is an automation bot for the Pokemon TCG Pocket (PTCGP) mobile game, running many instances of the game inside
+the MuMu emulator. It reads the screen via <b>template image matching ("needle" search)</b> and drives the game
+through <b>ADB shell input</b>. Main capabilities:
+</p>
+<ul>
+<li><b>Pack-opening rerolls</b>: creates new accounts (Create Bots 13P) or injects saved account XMLs (Inject modes), opens packs, and detects god packs, tradeable cards, and wishlisted cards.</li>
+<li><b>God pack verification (GP Test)</b>: the <code>Main.ahk</code> instance verifies god-pack accounts from the friend list via the Wonderpick screen.</li>
+<li><b>Friend management</b>: add by friend code, remove all, approve requests, showcase likes (<code>Stage\FriendManager.ahk</code>).</li>
+<li><b>Missions and rewards</b>: daily missions, beginner-mission grinding, gift packs, Wonderpick, event rewards (<code>Stage\MissionAndRewards.ahk</code>).</li>
+<li><b>Account management</b>: account XML extract/inject, per-account JSON metadata (pack counts, flags, shinedust), scheduling/eligibility, snapshot &amp; corruption repair.</li>
+<li><b>Hourglass spending</b> (HourglassSpend), <b>wishlist matching</b> (Wishlist), <b>Discord webhook notifications</b>, a <b>web card dashboard</b>, and a <b>third-party plugin system</b> (17 hook targets).</li>
+</ul>
+
+<h3>1.2 Technology Stack</h3>
+<table>
+<tr><th>Area</th><th>Technology</th><th>Notes</th></tr>
+<tr><td>Language/runtime</td><td>AutoHotkey v2.0</td><td>Ported from v1. Several v1 bugs are deliberately preserved (e.g. <code>selectMsg</code> at <code>PTCGPB.ahk:85-93</code>).</td></tr>
+<tr><td>Emulator</td><td>MuMu Player (Global/12, v4/v5)</td><td>Window class <code>Qt5156QWindowIcon</code>. Instance control goes through the MuMuManager channel, guest control through the ADB channel — the two are never mixed (<code>Emulator.ahk</code> header).</td></tr>
+<tr><td>Device control</td><td>ADB (persistent shell + su)</td><td>Keeps <code>adb shell</code> resident via <code>WScript.Shell.Exec</code>; every command is completion-detected with a <code>done</code> marker line.</td></tr>
+<tr><td>Screen recognition</td><td>GDI+ (PrintWindow capture + Gdip_ImageSearch)</td><td>Uses <code>PW_CLIENTONLY|PW_RENDERFULLCONTENT</code> so occluded/background windows can still be captured.</td></tr>
+<tr><td>Card reading</td><td>adv_pocket_tool (Android helper binary) + Windows OCR + border detection</td><td>Ticket-based result-file polling. The border (RarityBorder) path only runs when OCR fails.</td></tr>
+<tr><td>Card art hosting</td><td>Cloudinary (<code>res.cloudinary.com/crinitycloud</code>)</td><td>Migrated from <code>crinitys.github.io</code> on 2026-08-10 — ~14,000 images had pushed the GitHub Pages repo past the 1GB publishing limit. Cached locally under <code>Cache\CardImageCache\&lt;lang&gt;_&lt;country&gt;\</code> (see §9.3).</td></tr>
+<tr><td>Native acceleration</td><td>MCode (embedded x64 machine code)</td><td><code>lib\JsonScanMCode.ahk</code> — account JSON scan 19.8s → 0.4s (measured, 6,094 accounts).</td></tr>
+<tr><td>Web server</td><td>thqby HttpServer (native AHK, IOCP)</td><td>Replaces the old Rust <code>carddb.exe</code> (axum) and a PowerShell HttpListener script.</td></tr>
+<tr><td>Notifications</td><td>Discord webhooks</td><td><code>Diagnostics.Discord</code> + the <code>DiscordLogger.ahk</code> facade.</td></tr>
+<tr><td>Verification tooling</td><td><code>.bin\AutoHotkey64CLI.exe</code> (local build, gitignored)</td><td>Headless AHK load/runtime verification — warnings and unhandled exceptions go to stderr with no dialogs; unhandled exceptions exit 1.</td></tr>
+</table>
+
+<h3>1.3 Recurring Design Patterns</h3>
+<ul>
+<li><b>Facade-preserving refactoring</b>: bundles of free functions get moved into classes (static namespaces) while thin delegating wrappers with identical names/signatures stay behind for the hundreds-to-1,600 existing call sites. Examples: <code>ADB.ahk</code>→<code>Emulator</code>, part of <code>Utils.ahk</code>→<code>Host</code>, <code>Logging/Profiler/DiscordLogger</code>→<code>Diagnostics</code>, <code>Recognition\CardDetection.ahk</code>→<code>PackAnalysis</code>.</li>
+<li><b>Mechanism/policy separation</b>: <code>ScreenSearch</code> (pure search mechanics) contains no failure-recovery policy; <code>FindImageWithAction</code> (the policy layer) owns stuck-recovery (<code>restartGameInstance</code>).</li>
+<li><b>Load-time dependency stubs</b>: AHK v2 silently halts at load time when a function body references an undefined name. Cockpit/LaunchAllMumu therefore declare minimal stub classes for <code>Host</code>/<code>Emulator</code> instead of including the heavy real ones, just to pass the static load check. (Monitor.ahk used to stub too, but it actually <em>calls</em> <code>Emulator.GetInstallFolder()</code> at runtime — the empty stub caused a measured false "no MuMu folder" exit on 2026-08-07, so it now includes the real classes and stubs only <code>CreateStatusMessage</code>.)</li>
+<li><b>Atomic file writes</b>: write to a tmp file, then swap with <code>FileMove(…, 1)</code> — used consistently across Metadata/History/AccountStore/CockpitState. Deliberately <em>not</em> used for <code>Scripts\N.ini</code>, a multi-producer file where a whole-file rewrite would revert keys written by other paths in between (documented in <code>CockpitInstancePush.ahk</code>'s header).</li>
+<li><b>Self-declared dependencies</b>: library files #Include their own dependencies anchored on <code>%A_LineFile%</code>, so paths never break regardless of which entry point pulls them in.</li>
+</ul>
+
+<h2>2. Execution Topology — Entry Points and Process Model</h2>
+
+<p><code>SelfChecks\EntryPointLoad_selfcheck.ahk</code> validates 12 independently-executable entry points. The key relationships:</p>
+
+<pre>
+                        ┌──────────────────────────────────────────┐
+                        │ PTCGPB.ahk (3,175 lines, root GUI)       │
+                        │  settings GUI · tray · updater · heartbeat│
+                        └──────────┬───────────────────────────────┘
+            on StartBot() click    │  file copy + Run() (each a separate AHK process)
+      ┌───────────────┬────────────┼──────────────┬─────────────────┐
+      ▼               ▼            ▼              ▼                 ▼
+ Scripts\Main.ahk  Scripts\1.ahk  Scripts\2.ahk … Scripts\N.ahk   Tools\Monitor.ahk
+ (+Main2..)        (original)     (copy of 1.ahk) (copy of 1.ahk) (if autoLaunchMonitor)
+ GP-test worker    pack worker    pack worker     pack worker     watchdog/restart
+      │               │            │              │
+      │  each worker binds to its own MuMu instance window (winTitle = script name)
+      ▼               ▼            ▼              ▼
+ ┌──────────────────────────────────────────────────────────┐
+ │ MuMu Player instances (Qt5156QWindowIcon)                │
+ │   ADB(127.0.0.1:port) persistent shell ←→ PTCGP app      │
+ └──────────────────────────────────────────────────────────┘
+
+ Companion processes (started via Run()):
+   Scripts\module\Cockpit\Cockpit.ahk    ← monitoring dashboard (also serves --injection-queue mode)
+   Scripts\DashboardServerHost.ahk       ← card dashboard HTTP server host
+   Accounts\xmlManager.ahk / _InjectAccount.ahk / _ExtractAccount.ahk / _SendFriendRequest.ahk
+</pre>
+
+<table>
+<tr><th>Entry point</th><th>Lines/size</th><th>Role</th></tr>
+<tr><td><code>PTCGPB.ahk</code></td><td>3,175 lines (165KB)</td><td>Main GUI / composition root. Settings dialogs (pack selection / Discord / S4T / group reroll / tools), <code>StartBot()</code> (line 2567) clones and launches instances, heartbeat supervisor, auto-update from GitHub releases, periodic account snapshot timer (<code>AccountMetadata_PeriodicSnapshot</code>, line 538), plugin manifest generation (<code>PluginEngine_GenerateManifest</code>, line 2951) and the Plugin Manager UI.</td></tr>
+<tr><td><code>Scripts\1.ahk</code></td><td>2,162 lines (103KB)</td><td>The pack-opening worker original. Auto-exec: ADB connect → load account → infinite loop over the 4-phase <code>PackOpeningRun</code>, each phase bracketed by <code>PluginEngine.Fire("RunPhase", …)</code> (lines 368-393). DeadCheck=1 takes a recovery path instead.</td></tr>
+<tr><td><code>Scripts\Main.ahk</code></td><td>1,920 lines (92KB)</td><td>GP-test worker. Accepts friend requests → verifies god packs via the Wonderpick screen; rate-limit and VIP-trim GUIs; includes <code>Persist\HistoryImport.ahk</code> (collection import).</td></tr>
+<tr><td><code>Scripts\DashboardServerHost.ahk</code></td><td>123 lines</td><td>Standalone host for the card dashboard server. Small GUI: Start/Stop toggle, "Open in Browser", and the <b>card image language picker</b> (11 locales, sets <code>DashboardServer.CardImageLocale</code> — see §9.3).</td></tr>
+<tr><td><code>Scripts\module\Cockpit\Cockpit.ahk</code></td><td>3,427 lines (127KB)</td><td>Monitoring GUI + in-process aggregator. <code>#SingleInstance Off</code>, enforced manually: one per mode (dashboard / injection-queue).</td></tr>
+<tr><td><code>Scripts\module\Tools\Monitor.ahk</code> / <code>MonitorOnce.ahk</code></td><td>165 / 67 lines</td><td>Detects dead bot instances and restarts them. "Once" is the one-shot variant.</td></tr>
+<tr><td><code>Scripts\module\Tools\LaunchAllMumu.ahk</code></td><td>102 lines</td><td>Bulk-launches MuMu instances.</td></tr>
+<tr><td><code>Scripts\GenerateMaskCache.ahk</code></td><td>127 lines</td><td>Regenerates <code>Data\MaskCache.dat</code> from the 73 <code>Scripts\Mask\Mask_*.png</code> files (dev utility).</td></tr>
+<tr><td><code>Scripts\SpecialEvents\SpecialEventExtractor.ahk</code></td><td>367 lines (14.7KB)</td><td>GUI tool for extracting event-banner coordinates/images.</td></tr>
+<tr><td><code>Accounts\xmlManager.ahk</code></td><td>—</td><td>Account XML management GUI (duplicate checks, moves, etc.). Includes AccountStore directly.</td></tr>
+<tr><td><code>Accounts\_SendFriendRequest.ahk</code></td><td>—</td><td>Sends friend requests after inject (max 10 codes). The third consumer of ScreenSearch.</td></tr>
+<tr><td><code>Accounts\InjectionQueue.ahk</code></td><td>—</td><td>Trivial launcher: Run()s <code>Cockpit.ahk --injection-queue</code> and exits.</td></tr>
+</table>
+
+<div class="note">
+<b>The instance-cloning model</b>: <code>StartBot()</code> <b>copies</b> <code>Scripts\1.ahk</code> to <code>2.ahk</code>…<code>N.ahk</code> and <code>Main.ahk</code> to <code>Main2.ahk</code>… and then <code>Run()</code>s each one. Each worker's <code>A_ScriptName</code> is simultaneously its instance number, its MuMu window title (<code>winTitle</code>), its per-instance state file (<code>Scripts\N.ini</code>) and its account queue folder (<code>Accounts\Saved\N\</code>). Before launch, the Metrics section of <code>N.ini</code> (LastEndEpoch/rerolls/DeadCheck) is reset and the stale <code>[Cockpit]</code> section left by the previous session's push channel is deleted (lines 2687-2698).
+</div>
+
+<h2>3. Full Directory Structure</h2>
+
+<p>The biggest recent structural change: the ~33 files that used to sit flat directly under <code>Scripts\module\</code>
+were reclassified into <b>seven purpose folders</b> — <code>Recognition\</code>, <code>Stage\</code>, <code>Persist\</code>,
+<code>Tools\</code>, <code>Ui\</code>, <code>GameData\</code>, <code>Plugin\</code> — joining the pre-existing
+<code>classes\</code>, <code>Cockpit\</code> and <code>Dashboard\</code>. Only seven cross-cutting files remain at the top
+of <code>module\</code>. Because domain files carry no #Includes of their own (the entry points own the include lists,
+§11), the move only changed include <em>paths</em>, not the dependency graph.</p>
+
+<pre>
+PTCGPB_Crinity_v2/
+├── PTCGPB.ahk                  root entry point (main GUI)
+├── Settings.ini                single store for all settings (loaded by BotSettings)
+├── usernames_default.txt       name pool for account creation
+├── .bin/                       AutoHotkey64CLI.exe — local headless AHK verifier (gitignored)
+├── Accounts/
+│   ├── xmlManager.ahk, _InjectAccount.ahk, _ExtractAccount.ahk,
+│   │   _SendFriendRequest.ahk, InjectionQueue.ahk, xml_duplicate_finder.ahk
+│   ├── Cards/                  root of the per-account JSON store
+│   │   ├── accounts/           &lt;deviceAccount&gt;.json (one account = one document)
+│   │   ├── collections/        collection profiles
+│   │   └── wishlist.json       written by the dashboard, read by the bot
+│   └── Saved/&lt;N&gt;/              per-instance account XMLs + list.txt/list_current.txt queues
+├── Cache/CardImageCache/&lt;lang&gt;_&lt;country&gt;/   downloaded card art, split per locale (§9.3)
+├── Dashboard/WebRootFS/        card_database.html (web dashboard static assets)
+├── Data/                       packdata.dat, dictionary_{en,de,jp,cn}.dat,
+│                               MaskCache.dat, SpecialEvents/
+├── GUI/                        helptips.ahk (tooltip text), Images/
+├── Logs/                       log output (ADB.txt, Aggregator.txt, Plugins.txt,
+│                               Cockpit_Activity.txt, dwm_load.csv …)
+├── Plugins/                    live third-party plugins (one folder = one plugin; §13)
+├── Screenshots/                god-pack screenshots, Stuck\, Plugins\ …
+├── dev/                        NeedleCaptureTool.ahk + NeedleCoordMath (pure math layer)
+│                               + selfcheck + needles\ (capture output staging)
+├── docs/                       this document (en/ko, html+pdf), Plugin\README(+en, md/html/pdf),
+│                               Plugin\examples\ (12), 2026-08-09 audit/review reports
+└── Scripts/
+    ├── 1.ahk, Main.ahk, DashboardServerHost.ahk, GenerateMaskCache.ahk
+    ├── Needles/                216 needle template PNGs
+    ├── Mask/                   73 rarity-mask PNGs
+    ├── SpecialEvents/          SpecialEventExtractor.ahk
+    ├── lib/  (23 + HttpServer/ 3)   generic libraries
+    ├── module/
+    │   ├── (7 top-level)       ADB, AdvancedPocketTool, Config, DiscordLogger,
+    │   │                       MumuHelper, Session, Utils — facades & cross-cutting
+    │   ├── classes/ (19)       domain classes
+    │   ├── Recognition/ (6)    needle search + OCR + error popups (policy & data)
+    │   ├── Stage/ (6)          in-game UI flows (friends, missions, account create…)
+    │   ├── Persist/ (4)        account queue/XML/history/wishlist persistence flows
+    │   ├── GameData/ (3)       static game data parsing (packs, card names)
+    │   ├── Tools/ (5)          standalone operational tools (Monitor, Recorder…)
+    │   ├── Ui/ (2)             per-instance overlay + control toolbar
+    │   ├── Plugin/ (2)         plugin base class + engine
+    │   ├── Cockpit/ (5)        monitoring subsystem
+    │   └── Dashboard/ (3+17)   HTTP server + 17 Route_*.ahk files
+    └── SelfChecks/ (25)        headless self-verification scripts
+</pre>
+
+<h2>4. Scripts\lib\ — Generic Library Layer</h2>
+<p>lib/ contains only code with no game knowledge (game-specific code all lives in module/). Summaries based on the actual file headers and code:</p>
+
+<table>
+<tr><th>File</th><th>Responsibility (verified from code)</th></tr>
+<tr><td><code>Gdip_All.ahk</code> (112.6KB)</td><td>Vendored GDI+ standard library (v2 port). All bitmap create/save/convert primitives.</td></tr>
+<tr><td><code>Gdip_Imagesearch.ahk</code> (33.5KB)</td><td>v2 port of MasterFocus' <code>Gdip_ImageSearch()</code> — searches a needle bitmap inside a haystack bitmap (variation/transparency/direction/instance-count support).</td></tr>
+<tr><td><code>Gdip_Extra.ahk</code></td><td>Extra helpers missing from Gdip_All.</td></tr>
+<tr><td><code>GDIPEngine.ahk</code></td><td>Pure GDI+ layer: <code>ImageSearch()</code> (with a -3 y-bias for MuMu v4 and a dynamic <code>dbg_bbox</code> overlay lookup), <code>GetNeedle()</code> (path→bitmap cache Map), <code>Base64ToPointer/PointerToBase64</code>.</td></tr>
+<tr><td><code>GDIPService.ahk</code></td><td><code>extends GDIPEngine</code>. <code>CaptureWindow()</code> (PrintWindow flag 0x3 = PW_CLIENTONLY|PW_RENDERFULLCONTENT — captures occluded windows too), <code>CaptureViaAdbScreencap()</code> (<code>screencap -p | base64</code> streamed over the persistent shell), <code>ImportBase64/ExportBase64</code>. Everything returns a <code>ScreenBitmap</code>.</td></tr>
+<tr><td><code>ScreenBitmap.ahk</code></td><td>Value object owning a GDI+ bitmap pointer — <code>.pointer</code> + <code>Dispose()</code>; <code>__Delete()</code> is only a safety net.</td></tr>
+<tr><td><code>JSON.ahk</code></td><td>thqby/HotKeyIt-lineage v2-native JSON — <code>.parse(text, as_map, …)/.stringify()</code>. Replaces the cocobelgica v1 library.</td></tr>
+<tr><td><code>Metadata.ahk</code></td><td>One file = one JSON document. Malformed-tolerant load + tmp-then-rename atomic save. Parent class of <code>AccountStore</code>.</td></tr>
+<tr><td><code>Mutex.ahk</code></td><td>Named Win32 mutex <code>AcquireLock/ReleaseLock</code>. Consolidates direct DllCalls previously scattered across 4 files.</td></tr>
+<tr><td><code>Logging.ahk</code></td><td>Level-filtered file logging facade (implementation in <code>Diagnostics.Log</code>). Preserves ~1,600 call sites.</td></tr>
+<tr><td><code>LogFile.ahk</code></td><td><code>AppendLog()</code> — consolidates 3 near-duplicates (LogToFile/AppendGPlog/LogToResetListFile). Retries on locked files.</td></tr>
+<tr><td><code>Profiler.ahk</code></td><td><code>Prof_Scope()</code> facade (120+ sites). Enabled via <code>Settings.ini profileMode=1</code>, dumps CSV on exit. Implementation in <code>Diagnostics.Prof</code>.</td></tr>
+<tr><td><code>SmokeCheckpoint.ahk</code></td><td>For unattended remote runs — logs only key milestones with "elapsed since start + elapsed since previous checkpoint" per line. Fully self-contained (zero external deps).</td></tr>
+<tr><td><code>Timer.ahk</code></td><td>Stopwatch (<code>Expired()/ElapsedMs()/Reset()</code> + laps). Replaces ~270 occurrences of the <code>session failSafe</code> tick idiom. Supports pause compensation (<code>NotifyPauseStart</code>).</td></tr>
+<tr><td><code>Sanitize.ahk</code></td><td><code>SanitizeFileName</code> (strips only Windows-forbidden chars) and <code>SanitizeRemoteToken</code> (whitelist-only, prevents adb shell injection) — deliberately kept separate.</td></tr>
+<tr><td><code>UtilsCommon.ahk</code> (17.6KB)</td><td>Pure helpers that touch no bot state (<code>CmdRet</code>, <code>ToNum</code>, window rects, …). Split out of module\Utils.ahk.</td></tr>
+<tr><td><code>XML.ahk</code></td><td>MSXML2.DOMDocument COM wrapper (<code>XmlDocument</code>). Used for account XML parsing.</td></tr>
+<tr><td><code>StringCompare.ahk</code></td><td>Levenshtein distance (fuzzy matching OCR output against card names).</td></tr>
+<tr><td><code>HistoryParser.ahk</code> (15.5KB)</td><td>AHK port of the old carddb.exe (main.rs) history-text parsing. Shared by the 1.ahk and HistoryImport.ahk entry-point chains; also fetches/caches <code>Helper\cardmap.json</code> (<code>HistoryParser_EnsureCardmap</code>), reused by the dashboard prefetch route.</td></tr>
+<tr><td><code>JsonScanMCode.ahk</code> (13.8KB)</td><td>Two MCode blobs: <code>Scan()</code> (extracts deviceAccount + compacted source text from an account JSON) and <code>FindInArchiveFile()</code> (finds one account inside a multi-hundred-MB archive, ~60ms measured). Zero malloc / zero external symbols — loaded as bytes in memory and invoked via DllCall.</td></tr>
+<tr><td><code>DwmLoadSampler.ahk</code></td><td>Periodic sampling of dwm.exe CPU + AutoHotkeyGUI window count → <code>Logs\dwm_load.csv</code>. Temporary diagnostic for before/after comparison of WS_EX_COMPOSITED removal (off by default; included by Cockpit).</td></tr>
+<tr><td><code>GitManager.ahk</code></td><td>Automatic git commit+push of account XMLs/screenshots (<code>CommitAndPushGit</code>), records to git_history.csv.</td></tr>
+<tr><td><code>AHKProcessUtils.ahk</code></td><td>7 functions to find/kill running AHK script windows+processes (deduplicated from the Monitor scripts).</td></tr>
+<tr><td><code>HttpServer\</code> (3)</td><td>Vendored thqby HttpServer 2.0.2 (HTTP/WebSocket, IOCP OVERLAPPED, ctypes struct bindings). Only local change: #Include path anchoring.</td></tr>
+</table>
+
+<h2>5. Scripts\module\classes\ — All 19 Domain Classes in Detail</h2>
+
+<h3>5.1 The Session-State Axis: SessionStore and Its 4 Owner Objects</h3>
+<p>
+<code>SessionStore</code> (<code>module\Session.ahk</code>) is a "global state router". Its static <code>KEY_OWNER</code> Map
+(case-insensitive, 118 keys) assigns every key to one of 4 owner objects, and <code>session.get/set(key)</code>
+delegates to <code>this._owners[owner].%key%</code>. This preserves the old v1 flat sessionItems-Map call sites
+while moving the state itself into typed objects.
+</p>
+<table>
+<tr><th>Owner</th><th>Class</th><th>Contents</th></tr>
+<tr><td><code>session.account</code></td><td><code>Account</code></td><td>Currently loaded account: 25 fields (<code>accountFileName/accountName/deviceAccount/friendCode/friendIDs/keepAccount/isDead/maxAccountPackNum/manualVip*</code> …) plus composed objects <code>mission := Mission()</code> and <code>history := History()</code>.</td></tr>
+<tr><td><code>session.adb</code></td><td><code>Emulator</code></td><td>The 7 fields of the former AdbConnection (<code>adbPath/adbShell/adbPort/ptcgpAppPid/winTitle/scriptIniFile/baseTime</code>) plus ~47 ADB/MuMuManager methods.</td></tr>
+<tr><td><code>session.run</code></td><td><code>RunContext</code></td><td>55 run-context fields: failSafe, GP-test state (GPTest/gptest_*), reroll counters (rerolls/rerollStartTime), the needle breadcrumb (CurrentNeedle/Prev1/Prev2), debug flags (dbg_bbox), etc.</td></tr>
+<tr><td><code>session.packState</code></td><td><code>PackOpeningState</code></td><td>31 pack-opening state fields: currentPackInfo, packList, packTicket, pendingGodPack*, wishlistMap, s4t*, hourglassSpend*, etc.</td></tr>
+</table>
+
+<h3>5.2 The Account Domain Axis</h3>
+<h4>AccountStore (1,407 lines, 72.2KB) — <code>extends Metadata</code></h4>
+<ul>
+<li><b>Storage shape</b>: one account = one document at <code>Accounts\Cards\accounts\&lt;deviceAccount&gt;.json</code> (instance methods <code>ReadUnlocked/WriteUnlocked</code>). A legacy multi-account store <code>Accounts\Cards\metadata.json</code> is kept for never-migrated accounts.</li>
+<li><b>Concurrency</b>: named mutex <code>Global\PTCGPB_AccountStore</code> (<code>static LockName</code>). Document saves use Metadata's tmp-then-rename.</li>
+<li><b>Business logic (all static)</b>: <code>NewAccount/AccountFromObject/AccountToObject</code> (JSON object ↔ account Map conversion), <code>FindKey/EnsureAccount/MergeAccount</code>, <code>LoadAccount/SaveAccount/SaveTempAccount</code>, flags via <code>NewFlag/SetFlag/ClearFlagEverywhere</code>, <code>SetShinedust/SetLastPackPulledNow/SetLastLoggedInNow/SetLanguage</code>, filename parsing <code>ExtractPackCount/ExtractCreatedAt</code>, queue-entry removal <code>RemoveByNameOrIndex/RemoveByIndex</code>.</li>
+<li><b>Snapshot/repair</b> (flow in §10.3): <code>SnapshotAccounts()</code> (line 200), <code>RepairAccountsFromSnapshot()</code> (line 316), <code>RepairAccountFileIfCorrupted()</code> (line 400). MCode acceleration + streaming archive writes (a 172MB in-memory string concatenation that took 2m05s was replaced by streaming — measured, per in-source comments).</li>
+<li><b>Dashboard support</b>: <code>GatherDashboardPaths</code> (line 500), <code>BuildDashboardPayload</code> (line 588), <code>BuildDashboardManifestSignature</code> — account data collection used by the HTTP routes.</li>
+</ul>
+
+<h4>Mission (mission flags B/X/T/R)</h4>
+<p>Unifies what used to be two representations of the same data (the session's missionDoneList and the account record's <code>flags["B"/"X"/"T"/"R"]</code>). <code>Load(accountMeta)</code> converts flags→fields, and if the T flag's 5-day validity has expired it resets the field to 0 and <b>returns true so the caller must write it back with Flush()</b> (I/O deliberately moved out of the method). <code>Flush(accountMeta)</code> does the reverse conversion and recomputes T's validUntil.
+Flag semantics: <b>B</b>=beginner missions done, <b>X</b>=special missions done, <b>T</b>=pack in testing (5 days), <b>R</b>=gift received.</p>
+
+<h4>History (pull records + record-only flags H/W/SH)</h4>
+<p><code>RecordPull(pack, cards)</code> — writes directly and atomically into the account JSON's <code>pulls</code> array, independent of the AccountStore mutex (a faithful move of the historically separate <code>LogSinglePullToCardDatabase</code> write path). <code>SetHomeReached()</code> (H), <code>SetWonderPick(validUntil)</code> (W, 24h), <code>SetSpendHourglass()</code> (SH, 24h) — these flags are write-only (never read back anywhere in the repo; verified by grep per the header comment).</p>
+
+<h4>AccountEligibility (eligibility rules)</h4>
+<p>A collection of mostly-pure static predicates: <code>HoursSince/ToUTC/CurrentDailyResetUTC</code> (06:00 UTC reset), <code>WasAfterDailyReset/GetFlag/FlagIsExpired</code>, etc. Only <code>InjectRewardsEligible/InjectPackEligible/IsEligible</code> are impure (they read <code>botConfig</code>).</p>
+
+<h4>AccountScheduler (750 lines, 38.3KB) — port of the carddb.exe Rust logic</h4>
+<p>A 1:1 port of the old Rust subcommands, with the original function and line number noted above each method: <code>ScheduleAccounts</code> (main.rs:2752), <code>CountEligibleForAllInstances</code> (main.rs:2844), <code>BalanceXmls</code> (main.rs:3147). It keeps its own <code>Eligible</code>/<code>PackCountAllowed</code> (1:1 with Rust's <code>eligible()</code>) instead of using <code>AccountEligibility.IsEligible</code>, because the latter mixes in the wonderpick min-packs check and would diverge from Rust for accounts without metadata.</p>
+
+<h4>AccountQueue</h4>
+<p><code>ScanNext(scriptName, saveDir)</code> — scans <code>Accounts\Saved\&lt;N&gt;\list_current.txt</code> for the next injectable account, returning a 1-based index into the file <em>after</em> ineligible entries were removed and rewritten. The header documents in detail why this file cannot be merged into AccountStore: it is a load-time dependency boundary (four entry points include AccountStore without the names ScanNext's body references).</p>
+
+<h3>5.3 The Machine-Control Axis: Emulator and Host</h3>
+<h4>Emulator (926 lines, 48.4KB)</h4>
+<p>Everything about one MuMu instance and its ADB channel. <b>There are two command channels, and they are never mixed</b> (header comment):</p>
+<ol>
+<li><b>ADB channel</b> → <code>RunAdbCommand()</code>: talks <em>inside</em> the Android guest. Requires a booted guest and a live ADB connection.</li>
+<li><b>MuMuManager channel</b> → <code>RunManagerCommand()</code>: a host executable controls the instance <em>itself</em> (launch/shutdown/restart/setting/info). Works even when the guest is off — it is how instances get turned on in the first place.</li>
+</ol>
+<p>Selected methods (of ~47): install-folder discovery <code>GetInstallFolderFromConfig/GetInstallFolder</code> (config json → Settings.ini folderPath fallback, iterating 7 subfolder names), <code>IsV5/GetVersionBias</code>, connection lifecycle <code>ResolveBaseInfo/FindPort/ConnectDevice/InitializeShell/EnsureShell/ReconnectAfterInstanceRestart</code>, PTCGP app control <code>StartPtcgpApp/ClosePtcgpApp/TerminatePtcgpProcess/WaitForPtcgpAppFocus/IsHomeScreen/HasPtcgpAppCrash/DumpLogcatToFile</code>, input <code>Tap/TapWithBBox/InputText/SendKeyEvent/Swipe/SendGesture</code>, <code>CaptureScreenshot</code>.</p>
+
+<h4>Host (396 lines, 19.0KB, static namespace)</h4>
+<p>Everything the bot demands of the host Windows machine: PDH GPU performance counters (the handle must have exactly one owner per process, hence no instantiation), <code>GetInstanceGpuMemory</code> (WMI PID lookup cached in <code>gpuPidCache</code>, validated only with ProcessExist), cover-window management (<code>FindCoverWindow/IsIgnoredCoverWindow/Restore…</code>), instance processes <code>LaunchInstance/TerminateInstance/GetInstancePid/RestartInstance</code>, <code>ReloadScript</code>. The 20 functions moved here remain in <code>module\Utils.ahk</code> as same-name delegating wrappers.</p>
+
+<h3>5.4 The Screen-Recognition / Card Axis</h3>
+<table>
+<tr><th>Class</th><th>Responsibility</th></tr>
+<tr><td>4 classes in <code>Coords.ahk</code></td><td><code>Coordinate</code> (search region, 4 corners + isValid), <code>Needle</code> (needleName/imageName/coords/<code>FailsafeSeconds(fallback)</code> override), <code>NeedlesDict</code> (name→Needle Map), <code>FindResult</code> (success/coordinate/needleName — AHK v2 objects are always truthy, so callers are forced to check <code>.success</code> explicitly).</td></tr>
+<tr><td><code>Card</code></td><td>Value object for one pulled card (id/rarity/shinedust/name/illustrationId). Replaces 4 parallel arrays. Owns the <code>ADV_RARITY_*</code> globals (100–900 scale) and <code>Card.Shinedust()/TypeKey()</code>. Rarity 700 (2-star) is disambiguated by the PK_/TR_ id prefix.</td></tr>
+<tr><td><code>RarityBorder</code></td><td>Card-border detection coordinates/mask anchors (for 4/5/6-card layouts). <b>A dormant path that only runs when OCR recognition fails</b>, and explicitly excluded from refactoring.</td></tr>
+<tr><td><code>PackAnalysis</code> (1,303 lines, 77.8KB)</td><td>Three static nested classes: <code>Detect</code> (pack-loading wait, border/OCR recognition, GP/rarity judgement, then save + Discord notify), <code>Trade</code> (S4T XML plumbing, Discord headers, filtering), <code>Render</code> (composite pack image, card-art download from Cloudinary via <code>GetCardArtImage</code> — §9.3, ADB screenshots). The real implementation behind the 26 former CardDetection.ahk free functions.</td></tr>
+<tr><td><code>PackOpeningRun</code> (597 lines, 37.9KB)</td><td>The 4 phases of 1.ahk's main loop as static methods: <code>Prepare()</code> ("run"|"retry") → <code>OpenPacks()</code> → <code>GrindBeginnerMissions()</code> → <code>Finish()</code> ("continue"|"exit"). The old Goto labels (MidOfRun/EndOfRun) became early returns. Deliberately has no fields (prevents the case-collision load-halt accident class). Pushes its phase transitions to Cockpit via <code>CockpitInstancePush</code>.</td></tr>
+<tr><td><code>PackOpeningState</code></td><td>See §5.1 — the 31-field pack-state container.</td></tr>
+</table>
+
+<h3>5.5 The Infrastructure Axis</h3>
+<table>
+<tr><th>Class</th><th>Responsibility</th></tr>
+<tr><td><code>Diagnostics</code> (356 lines, 19.7KB)</td><td>Static namespace owning the 3 observability channels: <code>Diagnostics.Log</code> (level-filtered file logs), <code>Diagnostics.Prof</code> (timing), <code>Diagnostics.Discord</code> (webhooks). The children are static nested classes rather than instances because the facade files run global initialization at #Include time — static classes exist at load time, keeping include order irrelevant.</td></tr>
+<tr><td><code>GuiRegistry</code></td><td>Replacement for v1's named multi-window Guis: a name→Gui/Ctrl lookup (<code>guis</code>/<code>ctrls</code> namespaces) plus destroy-and-forget and a fake-modal wait. Consolidates 4 independently-grown Maps (StatusMessageUI/ScriptControlUI/HistoryImport/Recorder).</td></tr>
+<tr><td><code>CockpitInstancePush</code> (72 lines) <b>— new</b></td><td>Write-only push channel from each bot instance to Cockpit: <code>SetPhase</code> (4 constants, 1:1 with PackOpeningRun's phases), <code>SetActivity/ClearActivity</code> (11 display-only activity constants, 1:1 with existing SmokeCheckpoint boundaries), <code>SetLivePacks</code>, <code>SetPaused</code> — all plain IniWrites into <code>Scripts\N.ini [Cockpit]</code>. Deliberately no atomic commit (N.ini is a multi-producer file, see §1.3) and deliberately no Read() (the aggregator's <code>Agg_ReadInstanceIni</code> already reads the whole file each tick; a Read here would also break 1.ahk's load). Transitions are logged to <code>Logs\Cockpit_Activity.txt</code> at debug/trace level so "Activity was empty" can be distinguished after the fact from "ClearActivity fired early" (2026-08-10). Guarded no-op for Main workers.</td></tr>
+<tr><td><code>RunContext</code></td><td>See §5.1 — 55 run-context fields.</td></tr>
+<tr><td><code>Account</code></td><td>See §5.1 — 25 account fields + mission/history composition.</td></tr>
+</table>
+
+<h2>6. Scripts\module\ — Core Modules by Folder</h2>
+
+<h3>6.1 The Seven Top-Level Files (facades and cross-cutting concerns)</h3>
+<table>
+<tr><th>File</th><th>Responsibility</th></tr>
+<tr><td><code>ADB.ahk</code></td><td>Thin wrappers for the ADB free functions that moved into Emulator (<code>adbWriteRaw→session.adb.RunAdbCommand</code>, <code>adbClick→Tap</code>, <code>adbClick_wbb→TapWithBBox</code>, ~40 in total), preserving hundreds of call sites. Only 3 stateless helpers remain (<code>ADB_RedactCommand</code> which masks "input text", <code>ADB_LogTrace</code>, <code>waitadb</code>).</td></tr>
+<tr><td><code>MumuHelper.ahk</code></td><td>Delegates <code>getMuMuFolder()→Emulator.GetInstallFolder()</code>. Ten MuMuManager-channel wrappers were deleted for having zero call sites (the channel itself survives as Emulator.RunManagerCommand).</td></tr>
+<tr><td><code>Utils.ahk</code> (17.7KB)</td><td><code>Delay/DelayH</code> (setting-scaled sleeps), date math (<code>getChangeDateTime</code> server reset), sorting/comparison, settings migration (<code>MigrateDeleteMethod</code>), <code>getScriptBaseFolder()</code> (walks up to the folder containing PTCGPB.ahk as a marker), and 20 Host delegation wrappers.</td></tr>
+<tr><td><code>Config.ahk</code></td><td><code>BotSettings</code>: Settings.ini load/save + UI-control-name→setting-key maps (<code>mainConfigUIMap</code> etc.). <code>botConfig.get/set</code>.</td></tr>
+<tr><td><code>Session.ahk</code></td><td><code>SessionStore</code> — see §5.1.</td></tr>
+<tr><td><code>DiscordLogger.ahk</code></td><td>The Diagnostics.Discord facade.</td></tr>
+<tr><td><code>AdvancedPocketTool.ahk</code> (16.1KB)</td><td>Install/runtime utilities for <code>adv_pocket_tool</code>, the Android card-reading helper that replaced the ptcgpb binary. Flow: generate a ticket (<code>GenerateTicket</code>, 8 hex chars) → start <code>--monitor</code> in the background → press the pack-open button → poll <code>/data/ptcgp/result/&lt;ticket&gt;.result|.error</code> → run <code>--carddetail</code> and parse the resulting JSON (card id/rarity/name → <code>Card</code> array). Installation downloads from <code>crinitys.github.io/tools/adv_pocket_tool_android</code>, stages via sdcard into <code>/data/ptcgp/</code>, guarding only against truncated downloads via a minimum-size check (limitation flagged with a <code>ponytail:</code> comment).</td></tr>
+</table>
+
+<h3>6.2 Recognition\ — Needle Search, OCR, Error Popups</h3>
+
+<h4>ScreenSearch.ahk — Needle Search as a Service (no policy)</h4>
+<p>A service class absorbing the "capture window → look up needle → search → (repeat an action)" logic that was independently implemented three times in Main.ahk, 1.ahk and _SendFriendRequest.ahk.</p>
+<ul>
+<li><code>Search(hwnd, needleName, opts)</code>: one-shot capture+search. Returns the match position ("x,y") or false. Calls <code>ErrorCheckInScreen</code> on the captured frame via <b>dynamic lookup</b> (callers that don't include the error module silently skip it — only the lookup is wrapped in try; the actual Call is not swallowed).</li>
+<li><code>SearchIn(bmpPointer, imageName, x1,y1,x2,y2, variation)</code>: re-searches an already-captured frame (so N needles against the same frame cost only one capture).</li>
+<li><code>SearchWithAction(hwnd, needleName, actionFn, opts)</code>: repeats actionFn until found. Separate <code>pollIntervalMs</code> (default 100) and <code>actionIntervalMs</code> (reproduces the original "search every 100ms, click every sleepTime ms" split), <code>giveUpTimer</code> (expiry→return false), <code>stuckTimer</code>+<code>onStuck</code> (expiry→corrective callback, then Reset — the loop keeps going).</li>
+<li><code>NeedlesDir()</code>: <code>getScriptBaseFolder()\Scripts\Needles\</code> — independent of the caller's A_ScriptDir.</li>
+<li><b>Why it lives in module/</b>: it depends on needlesRegistry (game data). It <b>composes</b> GDIPService (does not extend it) — GDIPService is a peer edge-facing API, not a base class (header comment).</li>
+<li><b>Why no recovery policy here</b>: Search/SearchWithAction are pure mechanics. Building a Timer and deciding what Expired() means (give up vs. restart) is each caller's job — that policy layer is FindImageWithAction.</li>
+</ul>
+
+<h4>FindImageWithAction.ahk — the Unified Find+Act Primitive (policy layer)</h4>
+<p>Replaces the old <code>FindOrLoseImage</code>/<code>FindImageAndClick</code> (duplicated with subtly different definitions in 1.ahk and Main.ahk). Owns the stuck-recovery policy (<code>restartGameInstance</code>).</p>
+<ul>
+<li><b>findParam</b> (all keys optional): <code>searchVariation</code> (20), <code>limitTime</code> (seconds until stuck-recovery — when unset, the needle registry's <code>failsafeSeconds</code> override is consulted, else 45. Overrides like Country/Social/Points=90s and Missions=60s went un-consulted for a while, misclassifying slow-loading screens as stuck and repeatedly restarting instances; line 61 is the fix, with the measured incident dated 2026-08-08 in the comment; the stuck-reason string now embeds <code>elapsedTime/limitTime</code> so logs alone can prove which limit applied), <code>delay</code> (ms between action retries), <code>count</code> (-1 = unlimited internal polling, 1 = one-shot — no other value exists in the codebase), <code>findType</code> (FIND_NORMAL|FIND_INVERT), <code>silent</code>, <code>giveUpTime</code>, <code>stuckRecoveryEnabled</code>, <code>elapsedTime</code> (caller-accumulated elapsed for count=1), <code>matchPolicy</code> (FIRST|ANY|ALL).</li>
+<li><b>actionParam</b>: <code>ACTION_CLICK</code>{x,y} / <code>ACTION_IDLE</code> / <code>ACTION_LOOP_ESCAPE</code> / <code>ACTION_MULTIPLE_NEEDLES</code>{entries}.</li>
+<li><b>Returns</b>: always a <code>FindResult</code> — never a bare boolean.</li>
+<li><b>Needle breadcrumb</b>: <code>FindImageWithAction_TrackNeedle()</code> maintains the last 3 <b>distinct</b> needles in session (Prev2/Prev1/Current) — the material for restartGameInstance's "STUCK DETECTED" log line.</li>
+<li><b>Status throttle</b>: the "Finding X..." status message is throttled to once per 500ms (the comment at lines 109-125 documents the repaint bug that corrupted the toolbar's first button when the throttle was lost).</li>
+<li><b>slowMotion guard</b>: for the <code>Crinity_SpeedMod/1x/2x/3x</code> images, returns early success before searching (the old guard compared against image names that only existed inside a block comment, dead since the initial commit; reinstated against the live names: lines 146-149).</li>
+<li><b>Multi-needle optimization</b>: instead of re-capturing the window per entry, captures once and re-searches the same frame via <code>SearchIn</code>, with the error check also once per frame (measured optimization dated 2026-08-09, comment at lines 206-212).</li>
+<li>count=1 && no match && <code>elapsedTime ≥ limitTime</code> → <code>restartGameInstance("Stuck at &lt;image&gt;... (elapsedTime=…s, limitTime=…s)")</code>. For count=-1 the same happens in onStuck when stuckTimer expires.</li>
+</ul>
+
+<h4>NeedleRegistry.ahk / Error.ahk / OCR.ahk / CardDetection.ahk</h4>
+<ul>
+<li><code>NeedleRegistry.ahk</code> (19.2KB): <b>159</b> <code>Add(Needle(name, image, Coordinate(x1,y1,x2,y2) [, failsafeSeconds]))</code> calls into <code>global needlesRegistry := NeedlesDict()</code>, grouped by domain (Friend/Wonderpick/Pack/Menu/Common/Privacy/…). Class definitions live in classes\Coords.ahk; the data lives here — a deliberate split.</li>
+<li><code>Error.ahk</code>: 6 error needles (<code>Common_Error*</code>) mapped to handler functions (<code>errorFuncList</code>). Because ScreenSearch calls <code>ErrorCheckInScreen(bmp)</code> on every frame, the check is throttled to once per 1.5s (errors are rare and a 1–2s delay is acceptable — optimization #2, 2026-08-09).</li>
+<li><code>OCR.ahk</code> (22.9KB): Windows.Media.Ocr (WinRT) wrapper — HBitmap→RandomAccessStream→OCR. Primary card-name recognition path.</li>
+<li><code>CardDetection.ahk</code>: the delegating facade for <code>PackAnalysis</code> (26 same-name free-function wrappers, incl. <code>GetCardArtImage</code>).</li>
+</ul>
+
+<h3>6.3 Stage\ — In-Game UI Flows</h3>
+<table>
+<tr><th>File</th><th>Responsibility</th></tr>
+<tr><td><code>FriendManager.ahk</code> (1,039 lines, 50.7KB)</td><td>Friend add (code entry with the clipboard mutex <code>Global\PTCGPB_FriendCodeClipboard</code>), remove-all, friend-code retrieval, showcase likes, trade tutorial. Fires the FriendAdd/FriendRemove/Showcase plugin hooks.</td></tr>
+<tr><td><code>MissionAndRewards.ahk</code> (689 lines, 30.1KB)</td><td>Mission claiming / gift packs / Wonderpick / event reward UI flows. Records Mission/History flags on completion; fires DailyMission/SpecialMission/Gift/Wonderpick hooks.</td></tr>
+<tr><td><code>CreateAccount.ahk</code> (500 lines, 24.1KB)</td><td>Menu-based account deletion (menuDelete/menuDeleteStart) and the new-account tutorial (DoTutorial).</td></tr>
+<tr><td><code>Crinity_UnofficialPatch.ahk</code> (11.8KB)</td><td>Game-client specifics: privacy/TOS popup handling, app-launch assistance, speed-mode handling.</td></tr>
+<tr><td><code>HourglassSpend.ahk</code></td><td>Hourglass spend target/remaining math + session counters.</td></tr>
+<tr><td><code>SpecialEvent.ahk</code> (9.9KB)</td><td><code>SpecialEvent</code> class — event banner (red/blue box base64 images + coordinates + expiry) validation and detection; loads <code>.sevt</code> files.</td></tr>
+</table>
+
+<h3>6.4 Persist\ — Account/History/Wishlist Persistence Flows</h3>
+<table>
+<tr><th>File</th><th>Responsibility</th></tr>
+<tr><td><code>AccountManager.ahk</code> (566 lines, 27.5KB)</td><td><code>loadAccount()</code> (XML inject via the _InjectAccount path), account save-back, queue-list creation (<code>createAccountList</code> guarded by the <code>Global\PTCGPB_ScheduleAccounts</code> mutex), used-account tracking, pack-count filename updates, <code>AccountEligibility_IsEligible</code> (kept here — the load-time dependency boundary that keeps AccountQueue includable without this file).</td></tr>
+<tr><td><code>Database.ahk</code> (13.0KB)</td><td>Trade CSV logging, JSON indices, deviceAccount extraction from XML, screenshot cropping.</td></tr>
+<tr><td><code>HistoryImport.ahk</code> (15.2KB)</td><td>Game pull-history export / My Collection import (Main.ahk only; shares lib\HistoryParser).</td></tr>
+<tr><td><code>Wishlist.ahk</code></td><td>Reads <code>Accounts\Cards\wishlist.json</code> (written by the dashboard), reloads on mtime change, flags wishlisted cards in CheckPack.</td></tr>
+</table>
+
+<h3>6.5 GameData\ — Static Game Data</h3>
+<table>
+<tr><th>File</th><th>Responsibility</th></tr>
+<tr><td><code>Data.ahk</code></td><td>Parses <code>Data\packdata.dat</code> (<code>parsePackData</code>) and loads the language dictionaries (<code>parseDictionaryData</code> en/de/jp/cn).</td></tr>
+<tr><td><code>Packs.ahk</code></td><td><code>PackCoordinate</code> class + expansion-screen coordinate generation (<code>generatePackCoordinates</code>).</td></tr>
+<tr><td><code>CardNames.ahk</code></td><td>Rarity→emoji-label mapping and card-name helpers.</td></tr>
+</table>
+
+<h3>6.6 Tools\ — Standalone Operational Tools</h3>
+<table>
+<tr><th>File</th><th>Responsibility</th></tr>
+<tr><td><code>Monitor.ahk</code> / <code>MonitorOnce.ahk</code></td><td>Dead-instance watchdog / one-shot variant (entry points — see §2). Includes the <b>real</b> Emulator/Host (see §1.3), stubs only <code>CreateStatusMessage</code>.</td></tr>
+<tr><td><code>LaunchAllMumu.ahk</code></td><td>Bulk MuMu launcher (entry point). Keeps a minimal <code>Emulator</code> stub (line 25).</td></tr>
+<tr><td><code>Recorder.ahk</code> (20.4KB)</td><td>Mouse-action recording → AHK code generation (dev tool; hotkey currently disabled — 1.ahk keeps its globals falsy so v2 doesn't throw on unset reads).</td></tr>
+<tr><td><code>ResetLists.ahk</code></td><td>One-shot cleanup of the Accounts\Saved queues.</td></tr>
+</table>
+
+<h3>6.7 Ui\ — Per-Instance Overlay and Toolbar</h3>
+<h4>StatusMessageUI.ahk</h4>
+<ul>
+<li><code>CreateStatusMessage(Message, GuiName:="StatusMessage", X, Y, debugOnly, Persist)</code>: a 275×40 floating text window attached to the MuMu window. Windows/controls are registered and reused in <code>StatusMessageUI_Registry</code> (a GuiRegistry) keyed by GuiName+scriptName.</li>
+<li>Z-order: HWND_BOTTOM exactly once at creation — the overlap with 1.ahk's Reload/Pause/Stop toolbar (1.ahk:225-274) was fixed by pushing the status window to HWND_BOTTOM once more after the toolbar is created (the incident is documented in comments on both sides).</li>
+<li><code>SetReposition()</code>: a timer tracks MuMu window movement. Uses <code>Gui.GetPos()</code> because WinGetPos throws on hidden windows.</li>
+<li><code>Cockpit_WriteLiveMetrics()</code>: still a no-op stub that validates and immediately returns (line 126) — the real instance→Cockpit push now goes through <code>classes\CockpitInstancePush.ahk</code> (§5.5, §8).</li>
+</ul>
+<h4>ScriptControlUI.ahk (17.7KB)</h4>
+<p>Pause/Stop/Reload/DevMode toolbar + hotkeys (Shift+F5–F8), stop-all-instances. Pushes Paused state to Cockpit via <code>CockpitInstancePush.SetPaused</code> (which must run <em>before</em> <code>Pause(1)</code> freezes the thread).</p>
+
+<h3>6.8 Plugin\ — see §13.</h3>
+
+<h2>7. The Screen Recognition Stack (4 GDI+ Layers)</h2>
+
+<pre>
+ (policy)   Recognition\FindImageWithAction ─ stuck-recovery, limitTime, status, FindResult
+              │ uses
+ (service)  Recognition\ScreenSearch ─ registry lookup + capture/search/repeat (composition, no policy)
+              │ uses                          │ looks up
+ (edge API) GDIPService extends GDIPEngine    needlesRegistry (159 needles)
+              │  CaptureWindow(PrintWindow)   │
+              │  CaptureViaAdbScreencap       └─ Needle{imageName, coords, failsafeSeconds}
+              ▼
+ (engine)   GDIPEngine ─ ImageSearch(+MuMu v4 y-bias, bbox debug), GetNeedle cache, base64
+              │ uses
+ (algorithm) Gdip_Imagesearch.ahk (Gdip_ImageSearch) + Gdip_All.ahk (GDI+ primitives)
+              │ produces
+ (value obj) ScreenBitmap {pointer, Dispose()}
+</pre>
+
+<p>Capture is <code>PrintWindow(hwnd, hdc, 0x3)</code>, so it works even when the emulator window is covered by other windows. Needle bitmaps are loaded once and cached in <code>GDIPEngine.GetNeedle</code>'s static Map. When <code>isMuMuV4_test</code> is set, search y-coordinates get a -3 bias.</p>
+
+<h2>8. The Cockpit Monitoring Subsystem</h2>
+
+<h3>8.1 The Five Files (+ the Push Class)</h3>
+<table>
+<tr><th>File</th><th>Role</th></tr>
+<tr><td><code>Cockpit.ahk</code> (3,427 lines)</td><td>Entry point and GUI. Dark-themed ListView (per-instance status/account/rerolls/ETA), Events tab, column customization, context menu (kill/restart an instance), doubles as the <code>--injection-queue</code> mode. Hotkeys: Shift+F9 (exit), F5 (force refresh). Declares <b>no-op stub</b> Host/Emulator classes (lines 49-81) — the dashboard only reads state files and never touches the emulator (a fact verified by grep and recorded in the comment), so it avoids including the heavy real classes.</td></tr>
+<tr><td><code>CockpitAggregatorEngine.ahk</code> (908 lines)</td><td>The in-process aggregation engine: <code>Agg_InitEngine</code> (session-marker recovery) and <code>Agg_TickBody</code> (the 2-second tick body). Details in §10.2.</td></tr>
+<tr><td><code>CockpitState.ahk</code></td><td>Read/write library for <code>CockpitState.ini</code>. A single producer (the aggregator) assembles a builder and calls <code>CockpitState_Commit</code> (atomic tmp→ini swap). The GUI is the reader.</td></tr>
+<tr><td><code>CockpitMetrics.ahk</code></td><td>Pure statistics: ring buffer (cap 50), ETA/confidence, sparklines, 12 trend bins × 30min = a 6-hour window.</td></tr>
+<tr><td><code>CockpitInjectables.ahk</code></td><td>Per-instance injectable account counters. Source chain: <code>list_current.txt</code> → <code>list.txt</code> → raw XML count (approximate). TTL cache + <code>Injectables_InvalidateCache()</code>.</td></tr>
+<tr><td><code>classes\CockpitInstancePush.ahk</code></td><td>The producer side (included by the workers, <em>not</em> by Cockpit): pushes Phase/Activity/LivePacks/Paused into <code>N.ini [Cockpit]</code> the moment they change — see §5.5.</td></tr>
+</table>
+
+<h3>8.2 Data Sources</h3>
+<p>The aggregator performs no IPC with the bot processes — <b>it only reads files</b>: each instance's <code>Scripts\N.ini</code> — the <code>[Metrics]</code> section (LastStartEpoch/LastEndEpoch/rerolls/currentAccount) plus the <code>[Cockpit]</code> section pushed by <code>CockpitInstancePush</code> (Phase/Activity/LivePacks/Paused) — <code>Scripts\Main.ini</code>, <code>HeartBeat.ini</code> (no update for 120s = heartbeat lost), instance window existence (<code>WinExist("\N.ahk ahk_class AutoHotkey")</code> — without the backslash, searching for "2.ahk" also matched "12.ahk" and misreported dead instances as alive; comment at line 404), status-overlay window text, log files, and <code>Settings.ini</code>.</p>
+
+<h2>9. The Card Dashboard (HTTP Server) Subsystem</h2>
+
+<h3>9.1 Server Skeleton and Routes</h3>
+<ul>
+<li><b>Replacement history</b>: two servers — the Rust <code>carddb.exe</code> (axum) and a PowerShell HttpListener script — were replaced by one native-AHK <code>DashboardServer</code>.</li>
+<li><code>DashboardServer.ahk</code> (197 lines): HttpServer instance create/start/stop, routing table (<code>Route()</code> for exact paths, <code>RoutePrefix()</code> for prefix matches), 127.0.0.1/::1-only auth, static serving of <code>Dashboard\WebRootFS\</code>, and the <code>static CardImageLocale</code> ("en_US" default). It is skeleton-only: all route behavior is owned by the 17 <code>Route\Route_*.ahk</code> files, each self-registering in its <code>static __New()</code> — adding a route requires no change to the server file (just one #Include).</li>
+<li><code>DashboardShared.ahk</code> (634 lines): helpers shared by the routes — <code>Dashboard_IsLocalAddress</code> (the auth predicate, a pure function ported from the PowerShell server's Is-LocalRequest), <code>Dashboard_ResolveWebRootFile</code> (static-path resolution that can never escape <code>Dashboard\WebRootFS\</code> — the old servers exposed the whole install folder as web root), JSON/response helpers (<code>Dash.*</code>).</li>
+<li>The 17 routes: Ping, Instances, LaunchInstance, Shutdown, Inject, Wishlist, SettingsFriendId, DashboardRows, AccountsData, AccountsSummary, AccountJsonOpen, AccountCardMarks, AccountShinedustDeduct, CardImage, CardImagesPrefetch/PrefetchStop/Status.</li>
+<li><b>Process boundary</b>: the server always runs as the standalone <code>DashboardServerHost.ahk</code> process. PTCGPB.ahk and Cockpit.ahk both include <code>DashboardServerLauncher.ahk</code> (a thin remote control doing only ping/Run/shutdown) — Cockpit cannot include the heavy server chain directly because of its stub Host/Emulator strategy (rationale recorded in the file headers).</li>
+</ul>
+
+<h3>9.2 The Card Art Pipeline — Cloudinary Migration (2026-08-10)</h3>
+<p>Card art used to be served from <code>crinitys.github.io</code>; ~14,000 images pushed that repo past the GitHub Pages
+1GB publishing limit, so the originals were re-uploaded to <b>Cloudinary</b>. Both consumers now build the same URL shape,
+<code>https://res.cloudinary.com/crinitycloud/image/upload/images/&lt;lang&gt;_&lt;country&gt;/&lt;illustrationId&gt;.png</code>
+(no version segment needed — verified against the live host):</p>
+<ul>
+<li><b>The bot</b>: <code>PackAnalysis.Render.GetCardArtImage(illustrationId, lang, country, cacheDir)</code> (<code>PackAnalysis.ahk:1223</code>) — downloads one card's art for the synthetic pack image posted to Discord, validating the response by PNG signature (a 200-with-HTML shim page would otherwise get cached as a "valid" image forever).</li>
+<li><b>The dashboard</b>: <code>Route_CardImagesPrefetch.ahk</code> ("Use local card images") — bulk-prefetches every unique illustrationId from <code>Helper\cardmap.json</code> using ~20 concurrent async WinHttpRequests pumped from a timer (AHK is single-threaded; sequential download of thousands of cards would take tens of minutes). Returns 202 + a polled <code>/card-images/status</code>; a server stop also stops the downloads (<code>DashboardServer.OnStop</code>).</li>
+</ul>
+
+<h3>9.3 The Per-Locale Image Cache</h3>
+<p>The download cache is <code>Cache\CardImageCache\&lt;lang&gt;_&lt;country&gt;\&lt;illustrationId&gt;.png</code> — split into
+per-locale subfolders as of 2026-08-10, because some cards keep the same illustrationId across languages with different
+artwork; a single flat folder returned the previous language's cached art after a language switch (measured user report).
+Consumers:</p>
+<ul>
+<li>The bot picks the locale from the loaded account's language metadata (via <code>GetCardArtImage</code>'s lang/country parameters).</li>
+<li>The dashboard has no account context, so the host GUI (<code>DashboardServerHost.ahk</code>) offers an 11-locale picker (en_US … id_ID) that sets <code>DashboardServer.CardImageLocale</code>; prefetch and serving both key off it.</li>
+<li>Serving to the browser goes through <code>GET /card-image/&lt;illustrationId&gt;</code> (<code>Route_CardImage.ahk</code>, a RoutePrefix route) — the old page GET the cache folder directly, which only worked because the whole install folder was the web root. The route sanitizes the id, refuses paths that resolve outside the cache dir, and serves with <code>public, max-age=86400</code> (card art never changes).</li>
+</ul>
+
+<h2>10. Execution Flow Diagrams</h2>
+
+<h3>10.1 Main Loop: Startup → Account → Recognition → Action</h3>
+<pre>
+[PTCGPB.ahk]
+  configure in GUI → StartBot() (line 2567)
+    ├─ path validation (spaces/200 chars), diagnostic log-level confirm, reset account lists
+    ├─ if runMain: copy Main.ahk to Main2..N, Run() each
+    ├─ write Cockpit session marker (CockpitSession.ini), delete runtime state
+    ├─ PluginEngine_GenerateManifest()  → Scripts\_plugins.g.ahk (once, before worker copies)
+    ├─ for each of Instances: copy 1.ahk to N.ahk → reset N.ini Metrics
+    │    + delete stale [Cockpit] section → Run()
+    ├─ if autoLaunchMonitor: Run() module\Tools\Monitor.ahk
+    └─ if startCockpitWithBot (non-13P modes): Run() Cockpit.ahk
+
+[Scripts\N.ahk (copy of 1.ahk)] auto-exec
+    1. load #Include chain → session := SessionStore(), load botConfig
+       → #Include *i _plugins.g.ahk (line 98 — after botConfig assignment;
+         plugin registration logs through Diagnostics, which reads botConfig,
+         so an earlier include died at load: ordering bug fixed in 5104df2)
+    2. parsePackData / 4 dictionaries / initialize session keys
+    3. DirectlyPositionWindow → setADBBaseInfo → ConnectAdb
+    4. DisableBackgroundServices (as separate adb.exe processes)
+    5. build the Reload/Pause/Resume/Stop/DevMode toolbar GUI (lines 225-274)
+    6. initializeAdbShell (persistent shell + su)
+    7. if injectMethod: createAccountList → loadAccount()
+       └─ AccountQueue.ScanNext(list_current.txt) → XML inject (_InjectAccount path)
+          → AccountStore.LoadAccount → session.account.mission.Load(flags)
+    8. if DeadCheck=1: recovery path (unfriend → update metadata → SafeReload)
+    9. main loop (lines 368-393):
+       Loop {
+         Fire("RunPhase","before",{phase:"Prepare"})
+         PackOpeningRun.Prepare()               // "retry" → continue
+         if (deleteMethod != "Inject Rewards") {
+           PackOpeningRun.OpenPacks()           // select pack → open → detect cards
+           PackOpeningRun.GrindBeginnerMissions()
+         }
+         PackOpeningRun.Finish()                // "exit" → CleanupBeforeExit + ExitApp
+         // every phase is bracketed by PluginEngine.Fire RunPhase before/after,
+         // and each phase entry pushes CockpitInstancePush.SetPhase(...)
+       }
+
+[The recognize-act cycle while opening one pack]
+  PackOpeningRun.OpenPacks()
+    └─ FindImageWithAction("needleName", {count/limitTime/...}, {type: ACTION_CLICK, data:{x,y}})
+         ├─ needlesRegistry.Get(needle) → apply failsafeSeconds override
+         ├─ ScreenSearch.Search(hwnd, needle)
+         │    ├─ GDIPService.CaptureWindow(hwnd)   ← PrintWindow capture
+         │    ├─ GDIPEngine.ImageSearch(frame, needle bitmap, region, variation)
+         │    └─ ErrorCheckInScreen(frame)          ← 1.5s throttle, 6 error popups
+         ├─ match → adbClick_wbb(x,y) = session.adb.TapWithBBox
+         │           └─ RunAdbCommand("input tap x y") → persistent shell
+         └─ still not found → after limitTime: restartGameInstance("Stuck at ...")
+  Card reading: AdvancedPocketTool ticket → poll .result → --carddetail JSON
+    → Card[] → PackAnalysis.Detect (GP/rarity/wishlist judgement)
+    → on a find: preserve account XML + record via AccountStore/History + Discord notify
+      (+ PluginEngine.Fire PackOpening.after / GodPack / FoundTradeableCard)
+</pre>
+
+<h3>10.2 The Cockpit Aggregation Flow</h3>
+<pre>
+[N bot instances]                          [Cockpit.ahk process]
+  each updates Scripts\N.ini [Metrics]        Agg_InitEngine()
+  (LastStartEpoch/LastEndEpoch/               ├─ CockpitSession.ini marker → restore session
+   rerolls/currentAccount)                    └─ if no previous state: "ignore historical logs"
+  + pushes [Cockpit] Phase/Activity/
+   LivePacks/Paused (CockpitInstancePush)    every 2s: Agg_TickBody()
+  touches HeartBeat.ini                       ├─ reload Settings.ini (Instances/mode)
+  status overlay window text                  ├─ shift trend bins (30-min units)
+  log files                                   ├─ Injectables_GetAll(list_current.txt…)
+        │                                     ├─ Loop N: Agg_ReadInstanceIni(N)
+        │  (no IPC — file/window observation) │    + window alive (WinExist "\N.ahk")
+        └────────────────────────────────────►│    + overlay text + pushed Phase/Activity
+                                              │      → state judgement
+                                              │      (running/stuck/idle/dead)
+                                              ├─ Agg_ReadMainIni() (Main worker state)
+                                              ├─ Metrics_* (ETA/rings/trends/alerts)
+                                              ├─ Agg_EmitEvent (event ring)
+                                              ├─ Agg_WriteState(...)
+                                              │    └─ CockpitState_Commit(builder)
+                                              │         = write tmp → atomic swap to CockpitState.ini
+                                              └─ Agg_SaveRuntimeState (CockpitRuntime.ini)
+
+                                             every 1s: GUI timer
+                                              └─ CockpitState_Read() → refresh ListView/Events
+</pre>
+
+<h3>10.3 The AccountStore Snapshot/Repair Flow</h3>
+<pre>
+[Snapshot: AccountStore.SnapshotAccounts(progressFn)]  ← periodic timer / startup in PTCGPB.ahk
+  1. GatherDashboardPaths() → list of accounts\*.json + signature
+  2. if signature equals the repair meta's → skip (return true)
+  3. Loop Files (N = thousands):
+       text := FileRead(f)
+       r := JsonScanMCode.Scan(text)            ← MCode: extract deviceAccount + compact source
+       on failure (corrupt/no key) → fall back to FindInArchiveFile by filename
+       entries.Push({deviceAccount, compact})
+       (SmokeCheckpoint every 100/10 files + progressFn throttled to 200ms)
+  4. SortByProp(entries) → streaming write:
+       f.Write('{"ok":true,...,"accounts":[')  ; piecewise writes (kills the 172MB in-memory join)
+       → .tmp → FileMove swaps the repair archive
+  5. save meta {signature, accountCount, generatedAt, lastRepair*}
+
+[Repair: AccountStore.RepairAccountsFromSnapshot(progressFn)]
+  1. BuildRepairScanSignature() → skip if identical to last scan AND last scan had 0 corrupted
+  2. Loop accounts\*.json:
+       IsAccountFileCorrupted(path)? if not → continue
+       corruption found → RepairAccountFileIfCorrupted(deviceAccount)
+         ├─ FindInArchiveFile(archive, account)   ← MCode, ~60ms without full parsing
+         ├─ if absent → "not_in_archive"/"no_archive"
+         ├─ BackupCorruptedAccountFile → _repair_backup\
+         └─ restore the compact source atomically (tmp→rename) → FormatOnDisk
+  3. WriteRepairScanState(signature, corrupted)  ← input for the next skip decision
+</pre>
+
+<h3>10.4 ADB Command Execution — Persistent Shell vs. Separate Processes</h3>
+<pre>
+[Establishing the resident shell: Emulator.InitializeShell()]
+  WScript.Shell.Exec("adb -s 127.0.0.1:&lt;port&gt; shell")   ← one resident process
+  → StdIn.WriteLine("su")                                  ← root elevation
+  → on failure: disconnect/connect (CmdRet = separate processes), then backoff retry (max 5)
+
+[Normal commands: Emulator.RunAdbCommand(command, isReturnning, timeoutMs)]
+  StdIn.WriteLine(command . ";echo;echo done;")
+    ─ the bare `echo` is the key: for commands whose output does not end in a
+      newline (e.g. cat), the marker would glue on as "…}done" and ReadLine
+      would block forever; the empty echo guarantees the marker starts its own line
+  Loop StdOut.ReadLine():
+    line = "done"  → complete (returns the accumulated output if isReturnning)
+    timeout check  → only fires between lines. If the shell goes fully silent,
+                     ReadLine blocks inside the COM call — that case still hangs,
+                     and the only signal is a "send" trace without a matching
+                     "done" (in-source comment)
+    dead shell     → InitializeShell() reconnects, then retry
+  On failure: up to 3 retries; only when exhausted is adbShell reset + EnsureShell()
+    (previously the catch unconditionally reset the shell, so the next iteration
+     always died with "String has no StdIn" — per the measured comment, 2 of 3
+     retry failures were manufactured by that self-reset)
+
+[Commands that run as separate processes, and why]
+  · adb connect / disconnect (CmdRet)
+      → they create/tear down the connection itself, so they cannot ride the
+        resident shell that lives on that connection
+  · the 4 pm disable-user commands in DisableBackgroundServices
+      → each runs "adb -s ... shell pm ..." independently — executed before
+        the resident shell is initialized
+  · Emulator.TerminateAdbProcesses
+      → kills the host's adb.exe itself via ProcessClose+taskkill (host process
+        control, not a channel command)
+  · the MuMuManager channel (RunManagerCommand: launch/shutdown/restart/setting)
+      → instance-level control that must work with the guest powered off — its
+        failure modes differ from ADB's, which is why no generic RunCommand
+        wrapper exists (Emulator.ahk header)
+
+[The two screen-capture paths]
+  · GDIPService.CaptureWindow          : host-side PrintWindow (default, fast)
+  · GDIPService.CaptureViaAdbScreencap : guest-side screencap -p | base64
+      → streamed over the resident shell between ---START---/---END--- markers
+</pre>
+
+<h2>11. Inter-module #Include Dependencies</h2>
+
+<h3>11.1 Include Profile per Entry Point</h3>
+<table>
+<tr><th>Entry point</th><th>Includes</th><th>Deliberately excludes</th></tr>
+<tr><td><code>PTCGPB.ahk</code></td><td>most of lib, domain classes (Mission/History/Account/Emulator/Host/GuiRegistry/RunContext/PackOpeningState), Session/GameData\Data/ADB/Ui\StatusMessageUI/DiscordLogger/Stage\SpecialEvent/MumuHelper/Utils, Plugin\Plugin+PluginEngine, AccountStore+AccountEligibility+AccountScheduler, Coords, Card, Dashboard\DashboardServerLauncher, GUI\helptips.ahk</td><td>ScreenSearch/FindImageWithAction/NeedleRegistry (no screen recognition), PackAnalysis, FriendManager and other worker-only modules</td></tr>
+<tr><td><code>Scripts\1.ahk</code></td><td>the full worker stack: the above + Recognition\{OCR, CardDetection, Error, NeedleRegistry, ScreenSearch, FindImageWithAction} / Persist\{Database, Wishlist, AccountManager} / GameData\{CardNames, Packs} / Stage\{FriendManager, SpecialEvent, Crinity_UnofficialPatch, HourglassSpend, MissionAndRewards, CreateAccount} / Ui\ScriptControlUI / classes\{PackAnalysis, AccountQueue, RarityBorder, CockpitInstancePush, PackOpeningRun} / AdvancedPocketTool / <code>#Include *i _plugins.g.ahk</code></td><td>HistoryImport (Main-only), the Dashboard family</td></tr>
+<tr><td><code>Scripts\Main.ahk</code></td><td>the recognition/account stack of 1.ahk plus <code>Persist\HistoryImport.ahk</code> and <code>lib\StringCompare.ahk</code></td><td>the pack-run family it never uses: PackOpeningRun/Packs/CreateAccount/MissionAndRewards/HourglassSpend/SpecialEvent/ScriptControlUI</td></tr>
+<tr><td><code>Cockpit.ahk</code></td><td>lightweight libs + Config/Logging + <b>stub Host/Emulator declarations</b> (lines 49-81) + MumuHelper/Utils/AccountStore + the 4 Cockpit engine files + Dashboard\DashboardServerLauncher</td><td>the real Host/Emulator (avoiding the ADB/Gdip chain), and the entire recognition family</td></tr>
+<tr><td><code>Tools\Monitor.ahk</code></td><td>the <b>real</b> Emulator/Host + ADB/MumuHelper/Utils/AccountStore (it genuinely calls <code>Emulator.GetInstallFolder()</code>)</td><td>ScriptControlUI (stubs <code>CreateStatusMessage</code> instead — the Emulator retry path references it but Monitor never calls that path, verified by grep)</td></tr>
+</table>
+
+<h3>11.2 Core Dependency Chains</h3>
+<pre>
+Recognition\FindImageWithAction ─→ Recognition\ScreenSearch ─→ GDIPService ─→ GDIPEngine ─→ Gdip_Imagesearch/Gdip_All
+        │                                │                        └→ ScreenBitmap
+        │                                └→ needlesRegistry (Recognition\NeedleRegistry.ahk ─→ classes\Coords.ahk)
+        └→ session.adb (Emulator) ─→ Host.RunShellCommand / ADB persistent shell
+
+AccountStore ─ extends → Metadata ─→ JSON.ahk
+        │  ─→ Mutex, Sanitize, JsonScanMCode, SmokeCheckpoint (self-included)
+AccountScheduler ─→ AccountEligibility ─→ AccountStore
+AccountQueue ─→ (AccountEligibility_IsEligible: defined in Persist\AccountManager.ahk — kept
+                 a separate file because of the load-dependency boundary)
+
+Diagnostics ←facades─ Logging.ahk / Profiler.ahk / DiscordLogger.ahk
+PackAnalysis ←facade─ Recognition\CardDetection.ahk
+Emulator ←facades─ ADB.ahk, MumuHelper.ahk
+Host ←facade─ Utils.ahk (20 wrappers)
+SessionStore ─→ Account(→Mission, History) + Emulator + RunContext + PackOpeningState
+PluginEngine ─→ Plugin (catalogs only; Fire sites live in PackOpeningRun/FriendManager/
+                MissionAndRewards/HourglassSpend/1.ahk/…)
+</pre>
+
+<div class="note">
+<b>Include conventions</b>: (1) libraries #Include their own dependencies anchored on <code>%A_LineFile%</code>. (2) Domain classes (module\classes\*) carry no includes of their own — <b>the entry points own the include lists</b>, which is what makes Cockpit's stub substitution possible, and what made the seven-folder reorganization a pure path rename. (3) A few cross-module calls (<code>ErrorCheckInScreen</code>, <code>bboxAndPause_immage</code>) are resolved via <code>%"name"%</code> dynamic lookup, turning them into optional dependencies. (4) The plugin manifest is included with <code>#Include *i</code> (optional) and <em>after</em> the <code>botConfig</code> assignment — plugin registration logs through Diagnostics, which reads botConfig at call time.
+</div>
+
+<h2>12. SelfChecks / dev Tools / Data Assets</h2>
+
+<h3>12.1 SelfChecks (25 files)</h3>
+<p>Headless self-verification scripts. They are the safety net built after repeatedly hitting AHK v2's "load silently halts on an undefined name reference" trap in production. Highlights:</p>
+<ul>
+<li><code>EntryPointLoad_selfcheck</code>: launches all 12 entry points as real AHK processes and verifies clean loads. Its method is documented at length in its header: a same-folder wrapper (<code>#Warn VarUnset, StdOut</code> + <code>ExitApp</code> + <code>#Include &lt;entry point&gt;</code>) makes the AHK v2 loader itself do full name resolution with zero code executed — the exact warn mode was chosen by measurement (All,Off passes silently; default pops a modal; All,StdOut drowns in irrelevant LocalSameAsGlobal warnings). Verdicts must check <b>both</b> exit code and output, because the target failure class exits 0 with only a StdOut warning.</li>
+<li><code>NameCollision_selfcheck</code>: repo-wide pre-detection of field/method names that differ only in case (which silently halts loading).</li>
+<li><code>FindImageWithActionNeedleTrail_selfcheck</code>: pins the needle breadcrumb and that the slowMotion guard fires for the live imageNames.</li>
+<li><code>PluginEngine_selfcheck</code>: pins registration/validation/conflict/three-strikes/one-strike-MemberError/timeout behavior of the plugin engine.</li>
+<li><code>CockpitInstancePush_selfcheck</code>: pins the push channel's write shape.</li>
+<li>Per-domain: Account/AccountStore/AccountStoreQueue/AccountEligibility/AccountScheduler/Mission/History/PackAnalysis/PackOpeningState/RunContext/Timer/ScreenSearch/Needle/GuiRegistry/Host/Emulator/Diagnostics/DashboardServer/SessionStore/HistoryParser self-checks.</li>
+</ul>
+
+<h3>12.2 dev\ (needle authoring tools)</h3>
+<ul>
+<li><code>NeedleCaptureTool.ahk</code>: GUI tool that generates needle coordinates/code from screenshots with zoom/panning/box drawing/click points/alpha-blend snapshot comparison.</li>
+<li><code>NeedleCoordMath.ahk</code> + selfcheck: the pure math/code-generation layer (headless-verifiable).</li>
+<li><code>dev\needles\</code>: capture-output staging folder (gitignored except .gitkeep) — captures are promoted to <code>Scripts\Needles\</code> by hand after review.</li>
+</ul>
+
+<h3>12.3 Image and Data Assets</h3>
+<ul>
+<li><code>Scripts\Needles\</code>: 216 PNGs — the template-matching needles. The repo has more image resources than code files.</li>
+<li><code>Scripts\Mask\</code>: 73 PNGs + <code>Data\MaskCache.dat</code> — rarity border masks (cache regenerated by GenerateMaskCache.ahk).</li>
+<li><code>Data\packdata.dat</code> (pack definitions), <code>dictionary_{en,de,jp,cn}.dat</code> (OCR card-name dictionaries), <code>Data\SpecialEvents\</code> (event banner data).</li>
+<li><code>Cache\CardImageCache\&lt;locale&gt;\</code>: downloaded card art (created at runtime, gitignored) — see §9.3.</li>
+</ul>
+
+<h2>13. The Plugin System (module\Plugin\)</h2>
+<p>The third-party extension point, introduced 2026-08-09 and now housed in its own <code>Scripts\module\Plugin\</code> folder.
+Each folder under the repo-root <code>Plugins\</code> directory is one plugin; on every <code>StartBot</code>,
+<code>PluginEngine_GenerateManifest()</code> in <code>PTCGPB.ahk</code> (line 2951, invoked at line 2658 — once, before the
+worker copies, since every instance shares the single generated file) scans and validates them, then generates instantiation
+code into <code>Scripts\_plugins.g.ahk</code>. Workers pull it in with <code>#Include *i</code> so a missing manifest never
+breaks a standalone load. For the full usage guide and API reference see <code>docs\Plugin\README.md</code> (Korean) /
+<code>README-en.md</code> (English) — this section only summarizes the architecture.</p>
+
+<h3>13.1 Role Split — Plugin vs. PluginEngine</h3>
+<ul>
+<li><code>Plugin\Plugin.ahk</code> (154 lines): the parent class plugin authors inherit from. It owns the hook-target catalog (<code>HOOK_TARGETS</code>, 17 entries), the ctx-field catalog each target.when can carry (<code>CTX_SHAPES</code>, 35 entries), the state-access gate (<code>SessionRead/SessionWrite/ConfigRead/SaveValue/LoadValue/GetPlugin</code>), and developer convenience functions (<code>Log/TimerStart/TimerEnd/Dump/Screenshot</code> — all swallow their own failures, so a debugging helper can never three-strike the hook it was inspecting).</li>
+<li><code>Plugin\PluginEngine.ahk</code> (271 lines, 18.9KB): owns instance registration (<code>RegisterInstance</code>), conflict resolution (<code>ResolveConflicts</code>), dispatch (<code>Fire</code>), and the timeout watchdog (<code>CheckHookTimeout</code>). It only references Plugin.ahk's catalogs and keeps no copy of its own — "Plugin defines, PluginEngine validates and fires."</li>
+<li>The 17 hook targets: <code>RunPhase/Wonderpick/FriendAdd/FriendRemove/InstanceRestart/DailyMission/SpecialMission/Gift/Hourglass/Showcase/PackOpening/GodPack/AccountExhausted/StuckRestart/BeginnerMission/Tutorial/FoundTradeableCard</code> — each overrides whichever of <code>beforeEvent(ctx)/afterEvent(ctx)/onItem(ctx)</code> its target supports (<code>onItem</code> exists on the four per-item targets: FriendAdd/FriendRemove/SpecialMission/Showcase).</li>
+</ul>
+
+<h3>13.2 ctx Drift Detection — Catching Doc/Code Mismatches Automatically</h3>
+<p>Right before <code>Fire()</code> invokes a hook, it diffs the actual ctx's fields against <code>Plugin.CTX_SHAPES</code>'s declaration and logs a warning to <code>Logs\Plugins.txt</code> for any undeclared field (<code>_CheckCtxDrift</code>) — a signal that "the code has moved ahead of the catalog." Every ctx gets a <code>Get(key, default)</code> auto-attached via <code>DefineProp</code> so conditional fields (e.g. <code>GodPack.after</code>'s <code>cards</code>, an empty string on the fallback path) can be read safely — the same convention as <code>session.get()</code>/<code>botConfig.get()</code>. Rich payloads include <code>PackOpening.after</code> (cards/shinedust/pack/lang/country/raw/stopEarly) and <code>StuckRestart.before</code> (reason/callerFile/callerLine/RL).</p>
+
+<h3>13.3 The Four Safety Mechanisms</h3>
+<ul>
+<li><b>Three-strikes, with a one-strike exception</b>: 3 consecutive exceptions from the same <code>target.when</code> disables it for the rest of the session. But <code>PropertyError</code>/<code>MethodError</code> (accessing a nonexistent property or method) are deterministic — a retry would fail identically every time — so those disable it <b>immediately, on the first occurrence</b>, with no three-strikes grace.</li>
+<li><b>Conflict resolution</b>: if 2+ plugins implement the same <code>hookTarget</code>+method, the one whose class name sorts first alphabetically wins; the losers are silently skipped for that method only, not disabled entirely. This is decided once per <code>StartBot</code> — if the winner is later three-striked out, the runner-up does not take over.</li>
+<li><b>Reentrancy guard</b>: when <code>CheckHookTimeout()</code> detects a hung hook and calls <code>restartGameInstance()</code>, that call can itself fire the <code>StuckRestart</code> hook, re-entering <code>Fire()</code>. <code>currentHook</code> is saved on entry and restored afterward, so the watchdog's tracking of the outer (hung) hook survives the reentrant call.</li>
+<li><b>Timeout watchdog</b>: any hook that exceeds <code>HOOK_TIMEOUT_MS</code> (5 minutes) is force-restarted via the existing stuck-recovery path (<code>restartGameInstance</code>). Because this runs off a <code>SetTimer</code> callback, it cannot interrupt a pure tight loop with no <code>Sleep</code> in it — best-effort protection, not a hard kill.</li>
+</ul>
+
+<h3>13.4 The Plugin Manager UI</h3>
+<p><code>PTCGPB.ahk</code> — main window → Tools &amp; System Settings → Plugin Manager. A GUI for enabling, deleting, and inspecting conflicts without hand-editing <code>plugin.ini</code>. The status column color-codes each plugin as ✅ (healthy) / ⚠️ (structurally valid but some methods disabled by conflict) / ❌ (failed structural validation) / 🔴 ("dead plugin" — no callable methods at all), with the reason shown as a hover tooltip on ⚠️/🔴 rows.</p>
+
+<h3>13.5 The 12 Examples</h3>
+<p>Located at <code>docs\Plugin\examples\</code>, not the repo-root <code>Plugins\</code> (moved there on 2026-08-09 to avoid accidentally being picked up live). Highlights:</p>
+<table>
+<tr><th>Example</th><th>Demonstrates</th></tr>
+<tr><td><code>HelloWorld</code> / <code>HelloPacks</code></td><td>two minimal-scaffold examples</td></tr>
+<tr><td><code>PackCounter</code></td><td><code>SaveValue</code>/<code>LoadValue</code> persistent state + <code>GetPlugin</code> cross-plugin reference</td></tr>
+<tr><td><code>TradeableCardForwarder</code></td><td>a personal Discord webhook forward + real <code>ctx.Get()</code> usage + a helper class defined in the same file</td></tr>
+<tr><td><code>FriendAddHistory</code></td><td>logs friend-add history to a separate text file + splits its logic into a separate file via <code>#Include</code></td></tr>
+<tr><td><code>StuckLogcatDumper</code></td><td>saves an Android logcat dump via <code>session.adb.RunAdbCommand</code> + Discord notification</td></tr>
+<tr><td><code>FriendAddWatcher</code> / <code>FriendLimitAlert</code> / <code>WonderpickWatcher</code> / <code>GiftPackTracker</code> / <code>EventShowcase</code> / <code>AccountRetiredArchiver</code></td><td>one small consumer for each of the newer ctx payloads (onItem streams, Gift/Wonderpick/Showcase/AccountExhausted afters)</td></tr>
+</table>
+
+<div class="note">
+The plugin gate is a guardrail, not a security boundary — AHK v2 has no <code>private</code>, so a plugin can call <code>session.set()</code> directly and bypass it entirely. Its only value is that the allowed surface is documented in code and violations get logged.
+</div>
+
+<hr>
+<p class="meta">This document was rewritten on 2026-08-10 by directly inspecting the repository's actual source (file header comments plus function/class bodies) via Read/Grep, replacing the 2026-08-09 edition after the <code>Scripts\module\</code> seven-folder reorganization, the Cloudinary card-art migration, the per-locale image cache split, and the CockpitInstancePush channel landed. All cited line numbers and measured figures (e.g. MCode 19.8s→0.4s, the streaming snapshot write, the ADB self-reset bug, the Monitor stub false-exit) come from comments and code in the source itself. Korean edition: <code>project-architecture-ko.html/pdf</code> (translation pending for this revision).</p>
+
+</body>
+</html>

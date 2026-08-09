@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>PTCGPB Crinity v2 — 아키텍처 문서 (한국어판)</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Malgun Gothic", "Segoe UI", sans-serif;
+    font-size: 10.5pt; line-height: 1.55; color: #1a1a1a;
+    max-width: 900px; margin: 0 auto; padding: 24px;
+    background: #fff;
+  }
+  h1 { font-size: 21pt; border-bottom: 3px solid #2b6cb0; padding-bottom: 8px; }
+  h2 { font-size: 15pt; color: #2b6cb0; border-bottom: 1px solid #cbd5e0; padding-bottom: 4px; margin-top: 34px; page-break-after: avoid; }
+  h3 { font-size: 12pt; color: #2c5282; margin-top: 22px; page-break-after: avoid; }
+  h4 { font-size: 11pt; color: #444; margin-top: 16px; page-break-after: avoid; }
+  code { font-family: Consolas, "D2Coding", monospace; font-size: 9.5pt; background: #f0f4f8; padding: 1px 4px; border-radius: 3px; }
+  pre { font-family: Consolas, "D2Coding", monospace; font-size: 8.5pt; line-height: 1.35; background: #f7fafc; border: 1px solid #dde4ec; border-radius: 5px; padding: 10px 12px; overflow-x: auto; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; page-break-inside: auto; }
+  th { background: #2b6cb0; color: #fff; text-align: left; padding: 5px 8px; }
+  td { border: 1px solid #cbd5e0; padding: 4px 8px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7fafc; }
+  .meta { color: #666; font-size: 9pt; margin-bottom: 20px; }
+  .kpi { display: inline-block; background: #ebf4ff; border: 1px solid #bcd7f5; border-radius: 4px; padding: 2px 9px; margin: 2px 3px; font-size: 9pt; }
+  .note { background: #fffbea; border-left: 4px solid #d69e2e; padding: 8px 12px; margin: 10px 0; font-size: 9.5pt; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 3px 0; }
+  .toc { background: #f7fafc; border: 1px solid #dde4ec; border-radius: 5px; padding: 12px 18px; }
+  .toc ol { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>PTCGPB Crinity v2 — 프로젝트 아키텍처 문서</h1>
+<p class="meta">저장소: <code>D:\Store\Git\repo\PTCGPB_Crinity_v2</code> · 작성일: 2026-08-10 · 기준 브랜치: master (커밋 c358470 시점 + 미커밋 상태인 <code>Scripts\module\</code> 폴더 재분류 반영) · 실제 소스 코드 직접 확인 기반 작성</p>
+
+<p>
+<span class="kpi">.ahk 소스 파일 146개 (+docs\ 밑 플러그인 예제 13개)</span>
+<span class="kpi">도메인 클래스 19개</span>
+<span class="kpi">독립 진입점 12개</span>
+<span class="kpi">셀프체크 25개</span>
+<span class="kpi">니들 등록 159건 / 니들 PNG 216개</span>
+<span class="kpi">마스크 PNG 73개</span>
+<span class="kpi">대시보드 라우트 17개</span>
+<span class="kpi">플러그인 hookTarget 17개 / ctx shape 35개</span>
+<span class="kpi">예제 플러그인 12개</span>
+</p>
+
+<div class="toc">
+<b>목차</b>
+<ol>
+<li>프로젝트 개요</li>
+<li>실행 토폴로지 — 진입점과 프로세스 모델</li>
+<li>디렉터리 구조 전체 (module\ 폴더 재분류 포함)</li>
+<li>Scripts\lib\ — 범용 라이브러리 계층</li>
+<li>Scripts\module\classes\ — 도메인 클래스 19개 전부 상세</li>
+<li>Scripts\module\ — 폴더별 핵심 모듈</li>
+<li>화면 인식 스택 (GDI+ 4계층)</li>
+<li>Cockpit 모니터링 서브시스템 (인스턴스 푸시 채널 포함)</li>
+<li>카드 대시보드 (HTTP 서버) 서브시스템 (Cloudinary 이관 포함)</li>
+<li>실행 흐름도</li>
+<li>모듈 간 #Include 의존성</li>
+<li>SelfChecks / dev 도구 / 데이터 자산</li>
+<li>플러그인 시스템 (module\Plugin\)</li>
+</ol>
+</div>
+
+<h2>1. 프로젝트 개요</h2>
+
+<h3>1.1 이 봇이 하는 일</h3>
+<p>
+포켓몬 TCG 포켓(PTCGP) 모바일 게임 자동화 봇이다. MuMu 에뮬레이터 안에서 게임을 여러 인스턴스로 띄워 돌린다.
+화면은 <b>템플릿 이미지 매칭("니들" 검색)</b>으로 읽고, 게임 조작은 <b>ADB shell 입력</b>으로 한다. 주요 기능:
+</p>
+<ul>
+<li><b>팩 개봉 리롤</b>: 새 계정을 만들거나(Create Bots 13P) 저장된 계정 XML을 주입해서(Inject 모드) 팩을 열고, 갓팩/거래 가능 카드/위시리스트 카드를 감지한다.</li>
+<li><b>갓팩 검증(GP Test)</b>: <code>Main.ahk</code> 인스턴스가 원더픽 화면을 통해 친구 목록의 갓팩 계정을 검증한다.</li>
+<li><b>친구 관리</b>: 친구코드로 추가, 전체 삭제, 요청 승인, 쇼케이스 좋아요(<code>Stage\FriendManager.ahk</code>).</li>
+<li><b>미션/보상</b>: 일일 미션, 초보자 미션 반복, 선물 팩, 원더픽, 이벤트 보상(<code>Stage\MissionAndRewards.ahk</code>).</li>
+<li><b>계정 관리</b>: 계정 XML 추출/주입, 계정별 JSON 메타데이터(팩 수/플래그/샤인더스트), 스케줄링/자격 판정, 스냅샷 및 손상 복구.</li>
+<li><b>모래시계 소모</b>(HourglassSpend), <b>위시리스트 매칭</b>(Wishlist), <b>디스코드 웹훅 알림</b>, <b>웹 카드 대시보드</b>, <b>서드파티 플러그인 시스템</b>(hookTarget 17개).</li>
+</ul>
+
+<h3>1.2 기술 스택</h3>
+<table>
+<tr><th>영역</th><th>기술</th><th>비고</th></tr>
+<tr><td>언어/런타임</td><td>AutoHotkey v2.0</td><td>v1에서 이식. v1의 버그 몇 개는 의도적으로 그대로 보존한다(예: <code>selectMsg</code>, <code>PTCGPB.ahk:85-93</code>).</td></tr>
+<tr><td>에뮬레이터</td><td>MuMu Player (Global/12, v4/v5)</td><td>창 클래스는 <code>Qt5156QWindowIcon</code>. 인스턴스 제어는 MuMuManager 채널, 게스트 제어는 ADB 채널 — 이 둘은 절대 섞이지 않는다(<code>Emulator.ahk</code> 헤더 주석).</td></tr>
+<tr><td>기기 제어</td><td>ADB (상주 shell + su)</td><td><code>WScript.Shell.Exec</code>로 <code>adb shell</code>을 상주시킨다. 모든 명령은 <code>done</code> 마커 줄로 완료를 감지한다.</td></tr>
+<tr><td>화면 인식</td><td>GDI+ (PrintWindow 캡처 + Gdip_ImageSearch)</td><td><code>PW_CLIENTONLY|PW_RENDERFULLCONTENT</code>를 써서 가려지거나 백그라운드에 있는 창도 캡처한다.</td></tr>
+<tr><td>카드 판독</td><td>adv_pocket_tool(안드로이드 헬퍼 바이너리) + Windows OCR + 테두리 검출</td><td>티켓 기반 결과 파일 폴링. 테두리(RarityBorder) 경로는 OCR이 실패했을 때만 돈다.</td></tr>
+<tr><td>카드 아트 호스팅</td><td>Cloudinary (<code>res.cloudinary.com/crinitycloud</code>)</td><td>2026-08-10에 <code>crinitys.github.io</code>에서 이관 — 이미지 약 1만4천장 때문에 GitHub Pages 1GB 발행 한도를 넘어섰던 게 원인. 로컬 캐시는 <code>Cache\CardImageCache\&lt;lang&gt;_&lt;country&gt;\</code> 언어별 하위폴더(§9.3 참고).</td></tr>
+<tr><td>네이티브 가속</td><td>MCode(임베디드 x64 머신코드)</td><td><code>lib\JsonScanMCode.ahk</code> — 계정 JSON 스캔 19.8초 → 0.4초(실측, 계정 6,094개 기준).</td></tr>
+<tr><td>웹 서버</td><td>thqby HttpServer(네이티브 AHK, IOCP)</td><td>예전 Rust <code>carddb.exe</code>(axum)와 PowerShell HttpListener 스크립트를 대체.</td></tr>
+<tr><td>알림</td><td>디스코드 웹훅</td><td><code>Diagnostics.Discord</code> + <code>DiscordLogger.ahk</code> 파사드.</td></tr>
+<tr><td>검증 도구</td><td><code>.bin\AutoHotkey64CLI.exe</code>(로컬 빌드, gitignore됨)</td><td>헤드리스 AHK 로드/런타임 검증 — 경고와 처리 안 된 예외 전부 대화상자 없이 stderr로만 출력, 처리 안 된 예외는 exit 1.</td></tr>
+</table>
+
+<h3>1.3 반복되는 설계 패턴</h3>
+<ul>
+<li><b>파사드 보존 리팩토링</b>: 자유함수 뭉치를 클래스(정적 네임스페이스)로 옮기되, 기존 호출부(수백~1,600곳)를 위해 같은 이름·시그니처의 얇은 위임 래퍼를 남긴다. 예: <code>ADB.ahk</code>→<code>Emulator</code>, <code>Utils.ahk</code> 일부→<code>Host</code>, <code>Logging/Profiler/DiscordLogger</code>→<code>Diagnostics</code>, <code>Recognition\CardDetection.ahk</code>→<code>PackAnalysis</code>.</li>
+<li><b>메커니즘/정책 분리</b>: <code>ScreenSearch</code>(순수 검색 메커니즘)는 실패 복구 정책을 갖지 않는다. <code>FindImageWithAction</code>(정책 계층)이 멈춤 복구(<code>restartGameInstance</code>)를 소유한다.</li>
+<li><b>로드 시점 의존성 스텁</b>: AHK v2는 함수 몸통이 정의되지 않은 이름을 참조하면 로드 시점에 조용히 멈춘다. 그래서 Cockpit/LaunchAllMumu는 무거운 진짜 <code>Host</code>/<code>Emulator</code>를 끌어오는 대신, 정적 로드 검사만 통과시킬 최소 스텁 클래스를 선언한다. (Monitor.ahk도 원래 스텁을 썼지만, 실제로 런타임에 <code>Emulator.GetInstallFolder()</code>를 <em>호출</em>한다 — 빈 스텁 탓에 2026-08-07에 "MuMu 폴더 없음" 오탐 종료가 실측됐고, 지금은 진짜 클래스를 끌어오고 <code>CreateStatusMessage</code>만 스텁한다.)</li>
+<li><b>원자적 파일 쓰기</b>: tmp 파일에 쓴 뒤 <code>FileMove(…, 1)</code>로 교체 — Metadata/History/AccountStore/CockpitState 전반에서 일관되게 쓴다. <code>Scripts\N.ini</code>는 의도적으로 이 방식을 안 쓴다 — 다중 생산자 파일이라, 전체 재작성 커밋은 그 사이 다른 경로가 쓴 키를 되돌려버린다(<code>CockpitInstancePush.ahk</code> 헤더에 문서화됨).</li>
+<li><b>자기 의존성 선언</b>: 라이브러리 파일은 <code>%A_LineFile%</code> 기준으로 자기 의존성을 스스로 #Include한다 — 어느 진입점이 끌어오든 경로가 깨지지 않는다.</li>
+</ul>
+
+<h2>2. 실행 토폴로지 — 진입점과 프로세스 모델</h2>
+
+<p><code>SelfChecks\EntryPointLoad_selfcheck.ahk</code>가 독립 실행 가능한 진입점 12개를 검증한다. 핵심 관계:</p>
+
+<pre>
+                        ┌──────────────────────────────────────────┐
+                        │ PTCGPB.ahk (3,175줄, 루트 GUI)            │
+                        │  설정 GUI · 트레이 · 업데이터 · 하트비트  │
+                        └──────────┬───────────────────────────────┘
+            StartBot() 클릭 시     │  파일 복사 + Run() (전부 별도 AHK 프로세스)
+      ┌───────────────┬────────────┼──────────────┬─────────────────┐
+      ▼               ▼            ▼              ▼                 ▼
+ Scripts\Main.ahk  Scripts\1.ahk  Scripts\2.ahk … Scripts\N.ahk   Tools\Monitor.ahk
+ (+Main2..)        (원본)         (1.ahk 사본)    (1.ahk 사본)    (autoLaunchMonitor시)
+ GP테스트 워커      팩 워커        팩 워커         팩 워커         감시/재기동
+      │               │            │              │
+      │  워커마다 자기 MuMu 인스턴스 창에 바인딩(winTitle = 스크립트 이름)
+      ▼               ▼            ▼              ▼
+ ┌──────────────────────────────────────────────────────────┐
+ │ MuMu Player 인스턴스들 (Qt5156QWindowIcon)                │
+ │   ADB(127.0.0.1:port) 상주 shell ←→ PTCGP 앱              │
+ └──────────────────────────────────────────────────────────┘
+
+ 동반 프로세스(Run()으로 뜸):
+   Scripts\module\Cockpit\Cockpit.ahk    ← 모니터링 대시보드(--injection-queue 모드도 겸함)
+   Scripts\DashboardServerHost.ahk       ← 카드 대시보드 HTTP 서버 호스트
+   Accounts\xmlManager.ahk / _InjectAccount.ahk / _ExtractAccount.ahk / _SendFriendRequest.ahk
+</pre>
+
+<table>
+<tr><th>진입점</th><th>줄수/크기</th><th>역할</th></tr>
+<tr><td><code>PTCGPB.ahk</code></td><td>3,175줄 (165KB)</td><td>메인 GUI / 컴포지션 루트. 설정 다이얼로그(팩 선택/디스코드/S4T/그룹 리롤/도구), <code>StartBot()</code>(2567행)이 인스턴스를 복제·실행, 하트비트 슈퍼바이저, GitHub 릴리스 기반 자동 업데이트, 주기적 계정 스냅샷 타이머(<code>AccountMetadata_PeriodicSnapshot</code>, 538행), 플러그인 매니페스트 생성(<code>PluginEngine_GenerateManifest</code>, 2951행)과 Plugin Manager UI.</td></tr>
+<tr><td><code>Scripts\1.ahk</code></td><td>2,162줄 (103KB)</td><td>팩 개봉 워커 원본. 자동실행: ADB 연결 → 계정 로드 → 4단계 <code>PackOpeningRun</code> 무한루프, 각 단계는 <code>PluginEngine.Fire("RunPhase", …)</code>로 감싸짐(368-393행). DeadCheck=1이면 복구 경로로 간다.</td></tr>
+<tr><td><code>Scripts\Main.ahk</code></td><td>1,920줄 (92KB)</td><td>GP테스트 워커. 친구 요청을 수락 → 원더픽 화면으로 갓팩 검증. 레이트리밋/VIP정리 GUI 포함. <code>Persist\HistoryImport.ahk</code>(컬렉션 임포트) 포함.</td></tr>
+<tr><td><code>Scripts\DashboardServerHost.ahk</code></td><td>123줄</td><td>카드 대시보드 서버의 독립 호스트. 작은 GUI: Start/Stop 토글, "Open in Browser", <b>카드 이미지 언어 선택기</b>(11개 로케일, <code>DashboardServer.CardImageLocale</code> 설정 — §9.3 참고).</td></tr>
+<tr><td><code>Scripts\module\Cockpit\Cockpit.ahk</code></td><td>3,427줄 (127KB)</td><td>모니터링 GUI + 인프로세스 어그리게이터. <code>#SingleInstance Off</code>, 수동으로 강제: 모드(대시보드/인젝션큐)당 1개.</td></tr>
+<tr><td><code>Scripts\module\Tools\Monitor.ahk</code> / <code>MonitorOnce.ahk</code></td><td>165 / 67줄</td><td>죽은 봇 인스턴스 감지 및 재시작. "Once"는 1회성 변형.</td></tr>
+<tr><td><code>Scripts\module\Tools\LaunchAllMumu.ahk</code></td><td>102줄</td><td>MuMu 인스턴스 일괄 기동.</td></tr>
+<tr><td><code>Scripts\GenerateMaskCache.ahk</code></td><td>127줄</td><td><code>Scripts\Mask\Mask_*.png</code> 73장으로 <code>Data\MaskCache.dat</code>를 재생성(개발용 도구).</td></tr>
+<tr><td><code>Scripts\SpecialEvents\SpecialEventExtractor.ahk</code></td><td>367줄 (14.7KB)</td><td>이벤트 배너 좌표/이미지 추출용 GUI 도구.</td></tr>
+<tr><td><code>Accounts\xmlManager.ahk</code></td><td>—</td><td>계정 XML 관리 GUI(중복 검사, 이동 등). AccountStore를 직접 include.</td></tr>
+<tr><td><code>Accounts\_SendFriendRequest.ahk</code></td><td>—</td><td>주입 후 친구 요청 전송(최대 10개 코드). ScreenSearch의 세 번째 소비자.</td></tr>
+<tr><td><code>Accounts\InjectionQueue.ahk</code></td><td>—</td><td>단순 런처: <code>Cockpit.ahk --injection-queue</code>를 Run()하고 종료.</td></tr>
+</table>
+
+<div class="note">
+<b>인스턴스 복제 모델</b>: <code>StartBot()</code>이 <code>Scripts\1.ahk</code>를 <code>2.ahk</code>…<code>N.ahk</code>로, <code>Main.ahk</code>를 <code>Main2.ahk</code>…로 <b>복사</b>한 뒤 각각 <code>Run()</code>한다. 각 워커의 <code>A_ScriptName</code>은 동시에 인스턴스 번호이자, MuMu 창 제목(<code>winTitle</code>)이자, 인스턴스별 상태 파일(<code>Scripts\N.ini</code>)이자, 계정 큐 폴더(<code>Accounts\Saved\N\</code>)다. 실행 전에 <code>N.ini</code>의 Metrics 섹션(LastEndEpoch/rerolls/DeadCheck)을 리셋하고, 이전 세션의 푸시 채널이 남긴 낡은 <code>[Cockpit]</code> 섹션을 지운다(2687-2698행).
+</div>
+
+<h2>3. 디렉터리 구조 전체</h2>
+
+<p>최근 가장 큰 구조 변화: 예전엔 <code>Scripts\module\</code> 바로 밑에 평평하게 흩어져 있던 파일 약 33개가
+<b>목적별 폴더 7개</b> — <code>Recognition\</code>, <code>Stage\</code>, <code>Persist\</code>, <code>Tools\</code>,
+<code>Ui\</code>, <code>GameData\</code>, <code>Plugin\</code> — 로 재분류되어, 기존에 있던 <code>classes\</code>,
+<code>Cockpit\</code>, <code>Dashboard\</code>와 나란히 놓였다. <code>module\</code> 최상위엔 이제 영역을 가로지르는
+파일 7개만 남는다. 도메인 파일 자체는 자기 #Include를 갖지 않으므로(진입점이 include 목록을 소유 — §11), 이번 이동은
+include <em>경로</em>만 바꿨을 뿐 의존성 그래프 자체는 그대로다.</p>
+
+<pre>
+PTCGPB_Crinity_v2/
+├── PTCGPB.ahk                  루트 진입점(메인 GUI)
+├── Settings.ini                모든 설정의 단일 저장소(BotSettings가 로드)
+├── usernames_default.txt       계정 생성용 이름 풀
+├── .bin/                       AutoHotkey64CLI.exe — 로컬 헤드리스 AHK 검증기(gitignore됨)
+├── Accounts/
+│   ├── xmlManager.ahk, _InjectAccount.ahk, _ExtractAccount.ahk,
+│   │   _SendFriendRequest.ahk, InjectionQueue.ahk, xml_duplicate_finder.ahk
+│   ├── Cards/                  계정별 JSON 저장소의 루트
+│   │   ├── accounts/           &lt;deviceAccount&gt;.json (계정 하나 = 문서 하나)
+│   │   ├── collections/        컬렉션 프로필
+│   │   └── wishlist.json       대시보드가 쓰고, 봇이 읽음
+│   └── Saved/&lt;N&gt;/              인스턴스별 계정 XML + list.txt/list_current.txt 큐
+├── Cache/CardImageCache/&lt;lang&gt;_&lt;country&gt;/   다운로드한 카드 아트, 로케일별 분리(§9.3)
+├── Dashboard/WebRootFS/        card_database.html(웹 대시보드 정적 자산)
+├── Data/                       packdata.dat, dictionary_{en,de,jp,cn}.dat,
+│                               MaskCache.dat, SpecialEvents/
+├── GUI/                        helptips.ahk(툴팁 텍스트), Images/
+├── Logs/                       로그 출력(ADB.txt, Aggregator.txt, Plugins.txt,
+│                               Cockpit_Activity.txt, dwm_load.csv …)
+├── Plugins/                    실제 서드파티 플러그인(폴더 하나 = 플러그인 하나; §13)
+├── Screenshots/                갓팩 스크린샷, Stuck\, Plugins\ …
+├── dev/                        NeedleCaptureTool.ahk + NeedleCoordMath(순수 수학 계층)
+│                               + selfcheck + needles\(캡처 결과 스테이징)
+├── docs/                       이 문서(en/ko, html+pdf), Plugin\README(+en, md/html/pdf),
+│                               Plugin\examples\(12개), 2026-08-09 감사/리뷰 보고서
+└── Scripts/
+    ├── 1.ahk, Main.ahk, DashboardServerHost.ahk, GenerateMaskCache.ahk
+    ├── Needles/                니들 템플릿 PNG 216장
+    ├── Mask/                   희귀도 마스크 PNG 73장
+    ├── SpecialEvents/          SpecialEventExtractor.ahk
+    ├── lib/  (23개 + HttpServer/ 3개)   범용 라이브러리
+    ├── module/
+    │   ├── (최상위 7개)         ADB, AdvancedPocketTool, Config, DiscordLogger,
+    │   │                       MumuHelper, Session, Utils — 파사드 & 횡단 관심사
+    │   ├── classes/ (19개)     도메인 클래스
+    │   ├── Recognition/ (6개)  니들 검색 + OCR + 에러 팝업(정책 & 데이터)
+    │   ├── Stage/ (6개)        게임 내 UI 흐름(친구/미션/계정생성 …)
+    │   ├── Persist/ (4개)      계정 큐/XML/이력/위시리스트 영속화 흐름
+    │   ├── GameData/ (3개)     정적 게임 데이터 파싱(팩/카드 이름)
+    │   ├── Tools/ (5개)        독립 실행 운영 도구(Monitor, Recorder …)
+    │   ├── Ui/ (2개)           인스턴스별 오버레이 + 컨트롤 툴바
+    │   ├── Plugin/ (2개)       플러그인 부모 클래스 + 엔진
+    │   ├── Cockpit/ (5개)      모니터링 서브시스템
+    │   └── Dashboard/ (3+17개) HTTP 서버 + Route_*.ahk 파일 17개
+    └── SelfChecks/ (25개)      헤드리스 자체 검증 스크립트
+</pre>
+
+<h2>4. Scripts\lib\ — 범용 라이브러리 계층</h2>
+<p>lib/은 게임 지식이 전혀 없는 코드만 담는다(게임 특화 코드는 전부 module/에 있다). 실제 파일 헤더/코드 기준 요약:</p>
+
+<table>
+<tr><th>파일</th><th>책임(코드에서 확인)</th></tr>
+<tr><td><code>Gdip_All.ahk</code> (112.6KB)</td><td>GDI+ 표준 라이브러리 이식본(v2 포트, 벤더드). 비트맵 생성/저장/변환 기본 함수 전부.</td></tr>
+<tr><td><code>Gdip_Imagesearch.ahk</code> (33.5KB)</td><td>MasterFocus <code>Gdip_ImageSearch()</code>의 v2 포트 — 헤이스택 비트맵 안에서 니들 비트맵을 검색(변이/투명도/방향/매치수 지원).</td></tr>
+<tr><td><code>Gdip_Extra.ahk</code></td><td>Gdip_All에 빠진 추가 헬퍼.</td></tr>
+<tr><td><code>GDIPEngine.ahk</code></td><td>순수 GDI+ 계층: <code>ImageSearch()</code>(MuMu v4용 -3 y-바이어스, 동적 <code>dbg_bbox</code> 오버레이 조회), <code>GetNeedle()</code>(경로→비트맵 캐시 Map), <code>Base64ToPointer/PointerToBase64</code>.</td></tr>
+<tr><td><code>GDIPService.ahk</code></td><td><code>extends GDIPEngine</code>. <code>CaptureWindow()</code>(PrintWindow 플래그 0x3 = PW_CLIENTONLY|PW_RENDERFULLCONTENT — 가려진 창도 캡처), <code>CaptureViaAdbScreencap()</code>(<code>screencap -p | base64</code>를 상주 shell로 스트리밍), <code>ImportBase64/ExportBase64</code>. 전부 <code>ScreenBitmap</code>을 반환.</td></tr>
+<tr><td><code>ScreenBitmap.ahk</code></td><td>GDI+ 비트맵 포인터를 소유하는 값 객체 — <code>.pointer</code> + <code>Dispose()</code>; <code>__Delete()</code>는 안전망일 뿐.</td></tr>
+<tr><td><code>JSON.ahk</code></td><td>thqby/HotKeyIt 계열 v2 네이티브 JSON — <code>.parse(text, as_map, …)/.stringify()</code>. cocobelgica v1 라이브러리를 대체.</td></tr>
+<tr><td><code>Metadata.ahk</code></td><td>파일 하나 = JSON 문서 하나. 오손 허용 로드 + tmp-then-rename 원자적 저장. <code>AccountStore</code>의 부모 클래스.</td></tr>
+<tr><td><code>Mutex.ahk</code></td><td>이름 있는 Win32 뮤텍스 <code>AcquireLock/ReleaseLock</code>. 예전에 파일 4개에 흩어져 있던 직접 DllCall을 통합.</td></tr>
+<tr><td><code>Logging.ahk</code></td><td>레벨 필터링 파일 로깅 파사드(구현은 <code>Diagnostics.Log</code>). 기존 호출부 약 1,600곳 보존.</td></tr>
+<tr><td><code>LogFile.ahk</code></td><td><code>AppendLog()</code> — 거의 동일했던 3개(LogToFile/AppendGPlog/LogToResetListFile)를 통합. 잠긴 파일은 재시도.</td></tr>
+<tr><td><code>Profiler.ahk</code></td><td><code>Prof_Scope()</code> 파사드(120곳 이상). <code>Settings.ini profileMode=1</code>로 활성화, 종료 시 CSV 덤프. 구현은 <code>Diagnostics.Prof</code>.</td></tr>
+<tr><td><code>SmokeCheckpoint.ahk</code></td><td>무인 원격 실행용 — 핵심 마일스톤만, 줄마다 "시작 후 경과 + 이전 체크포인트 이후 경과"를 로그. 완전히 자기완결적(외부 의존성 0).</td></tr>
+<tr><td><code>Timer.ahk</code></td><td>스톱워치(<code>Expired()/ElapsedMs()/Reset()</code> + 랩). <code>session failSafe</code> 틱 관용구 약 270곳을 대체. 일시정지 보정 지원(<code>NotifyPauseStart</code>).</td></tr>
+<tr><td><code>Sanitize.ahk</code></td><td><code>SanitizeFileName</code>(Windows 금지 문자만 제거)과 <code>SanitizeRemoteToken</code>(화이트리스트 전용, adb shell 인젝션 방지) — 의도적으로 분리 유지.</td></tr>
+<tr><td><code>UtilsCommon.ahk</code> (17.6KB)</td><td>봇 상태를 건드리지 않는 순수 헬퍼(<code>CmdRet</code>, <code>ToNum</code>, 창 rect 등). module\Utils.ahk에서 분리.</td></tr>
+<tr><td><code>XML.ahk</code></td><td>MSXML2.DOMDocument COM 래퍼(<code>XmlDocument</code>). 계정 XML 파싱에 사용.</td></tr>
+<tr><td><code>StringCompare.ahk</code></td><td>레벤슈타인 거리(OCR 출력과 카드 이름을 퍼지 매칭).</td></tr>
+<tr><td><code>HistoryParser.ahk</code> (15.5KB)</td><td>옛 carddb.exe(main.rs)의 이력 텍스트 파싱을 AHK로 이식. 1.ahk와 HistoryImport.ahk 진입점 체인이 공유. <code>Helper\cardmap.json</code>도 여기서 받아오고 캐시(<code>HistoryParser_EnsureCardmap</code>) — 대시보드 프리페치 라우트도 재사용.</td></tr>
+<tr><td><code>JsonScanMCode.ahk</code> (13.8KB)</td><td>MCode 덩어리 2개: <code>Scan()</code>(계정 JSON에서 deviceAccount + 압축 소스 텍스트 추출)과 <code>FindInArchiveFile()</code>(수백MB 아카이브에서 계정 하나 찾기, 실측 ~60ms). malloc/외부 심볼 0개 — 메모리에 바이트로 로드해 DllCall로 호출.</td></tr>
+<tr><td><code>DwmLoadSampler.ahk</code></td><td>dwm.exe CPU + AutoHotkeyGUI 창 개수를 주기적으로 샘플링 → <code>Logs\dwm_load.csv</code>. WS_EX_COMPOSITED 제거 전/후 비교용 임시 진단 도구(기본 꺼짐, Cockpit이 include).</td></tr>
+<tr><td><code>GitManager.ahk</code></td><td>계정 XML/스크린샷 자동 git commit+push(<code>CommitAndPushGit</code>), git_history.csv에 기록.</td></tr>
+<tr><td><code>AHKProcessUtils.ahk</code></td><td>실행 중인 AHK 스크립트 창+프로세스를 찾거나 죽이는 함수 7개(Monitor 계열 스크립트에서 중복 제거해 추출).</td></tr>
+<tr><td><code>HttpServer\</code> (3개)</td><td>thqby HttpServer 2.0.2 벤더드(HTTP/WebSocket, IOCP OVERLAPPED, ctypes 구조체 바인딩). 로컬 변경은 #Include 경로 앵커링뿐.</td></tr>
+</table>
+
+<h2>5. Scripts\module\classes\ — 도메인 클래스 19개 전부 상세</h2>
+
+<h3>5.1 세션 상태 축: SessionStore와 소유자 객체 4개</h3>
+<p>
+<code>SessionStore</code>(<code>module\Session.ahk</code>)는 "전역 상태 라우터"다. static <code>KEY_OWNER</code> Map
+(대소문자 무시, 118개 키)이 모든 키를 소유자 객체 4개 중 하나에 배정하고, <code>session.get/set(key)</code>가
+<code>this._owners[owner].%key%</code>로 위임한다. v1 시절 평평한 sessionItems Map 호출부는 그대로 두면서, 상태 자체는
+타입 있는 객체로 옮긴 것이다.
+</p>
+<table>
+<tr><th>소유자</th><th>클래스</th><th>내용</th></tr>
+<tr><td><code>session.account</code></td><td><code>Account</code></td><td>현재 로드된 계정: 필드 25개(<code>accountFileName/accountName/deviceAccount/friendCode/friendIDs/keepAccount/isDead/maxAccountPackNum/manualVip*</code> …) + 합성 객체 <code>mission := Mission()</code>, <code>history := History()</code>.</td></tr>
+<tr><td><code>session.adb</code></td><td><code>Emulator</code></td><td>예전 AdbConnection의 필드 7개(<code>adbPath/adbShell/adbPort/ptcgpAppPid/winTitle/scriptIniFile/baseTime</code>) + ADB/MuMuManager 메서드 약 47개.</td></tr>
+<tr><td><code>session.run</code></td><td><code>RunContext</code></td><td>실행 컨텍스트 필드 55개: failSafe, GP테스트 상태(GPTest/gptest_*), 리롤 카운터(rerolls/rerollStartTime), 니들 브레드크럼(CurrentNeedle/Prev1/Prev2), 디버그 플래그(dbg_bbox) 등.</td></tr>
+<tr><td><code>session.packState</code></td><td><code>PackOpeningState</code></td><td>팩 개봉 상태 필드 31개: currentPackInfo, packList, packTicket, pendingGodPack*, wishlistMap, s4t*, hourglassSpend* 등.</td></tr>
+</table>
+
+<h3>5.2 계정 도메인 축</h3>
+<h4>AccountStore (1,407줄, 72.2KB) — <code>extends Metadata</code></h4>
+<ul>
+<li><b>저장 형태</b>: 계정 하나 = <code>Accounts\Cards\accounts\&lt;deviceAccount&gt;.json</code> 문서 하나(인스턴스 메서드 <code>ReadUnlocked/WriteUnlocked</code>). 아직 마이그레이션 안 된 계정용 레거시 멀티계정 저장소 <code>Accounts\Cards\metadata.json</code>도 유지된다.</li>
+<li><b>동시성</b>: 이름 있는 뮤텍스 <code>Global\PTCGPB_AccountStore</code>(<code>static LockName</code>). 문서 저장은 Metadata의 tmp-then-rename 사용.</li>
+<li><b>비즈니스 로직(전부 static)</b>: <code>NewAccount/AccountFromObject/AccountToObject</code>(JSON 객체 ↔ 계정 Map 변환), <code>FindKey/EnsureAccount/MergeAccount</code>, <code>LoadAccount/SaveAccount/SaveTempAccount</code>, <code>NewFlag/SetFlag/ClearFlagEverywhere</code>를 통한 플래그, <code>SetShinedust/SetLastPackPulledNow/SetLastLoggedInNow/SetLanguage</code>, 파일명 파싱 <code>ExtractPackCount/ExtractCreatedAt</code>, 큐 항목 제거 <code>RemoveByNameOrIndex/RemoveByIndex</code>.</li>
+<li><b>스냅샷/복구</b>(흐름은 §10.3): <code>SnapshotAccounts()</code>(200행), <code>RepairAccountsFromSnapshot()</code>(316행), <code>RepairAccountFileIfCorrupted()</code>(400행). MCode 가속 + 스트리밍 아카이브 쓰기(소스 주석에 따르면, 172MB짜리 메모리 내 문자열 이어붙이기가 2분5초 걸리던 걸 스트리밍으로 교체).</li>
+<li><b>대시보드 지원</b>: <code>GatherDashboardPaths</code>(500행), <code>BuildDashboardPayload</code>(588행), <code>BuildDashboardManifestSignature</code> — HTTP 라우트가 쓰는 계정 데이터 수집.</li>
+</ul>
+
+<h4>Mission (미션 플래그 B/X/T/R)</h4>
+<p>같은 데이터를 두 가지 표현으로 갖고 있던 것(세션의 missionDoneList와 계정 레코드의 <code>flags["B"/"X"/"T"/"R"]</code>)을 하나로 합쳤다. <code>Load(accountMeta)</code>가 flags→필드로 변환하고, T 플래그의 5일 유효기간이 지났으면 필드를 0으로 리셋하면서 <b>true를 반환해 호출부가 Flush()로 다시 써야 함을 알린다</b>(I/O를 메서드 밖으로 의도적으로 뺀 것). <code>Flush(accountMeta)</code>는 역변환을 하면서 T의 validUntil을 재계산한다.
+플래그 의미: <b>B</b>=초보자 미션 완료, <b>X</b>=스페셜 미션 완료, <b>T</b>=팩 테스트 중(5일), <b>R</b>=선물 수령함.</p>
+
+<h4>History (수령 기록 + 기록 전용 플래그 H/W/SH)</h4>
+<p><code>RecordPull(pack, cards)</code> — 계정 JSON의 <code>pulls</code> 배열에 AccountStore 뮤텍스와 무관하게 직접·원자적으로 쓴다(예전엔 별도였던 <code>LogSinglePullToCardDatabase</code> 쓰기 경로를 그대로 옮긴 것). <code>SetHomeReached()</code>(H), <code>SetWonderPick(validUntil)</code>(W, 24시간), <code>SetSpendHourglass()</code>(SH, 24시간) — 이 플래그들은 쓰기 전용이다(저장소 전체에서 다시 읽는 곳이 없음, 헤더 주석대로 grep으로 확인됨).</p>
+
+<h4>AccountEligibility (자격 판정 규칙)</h4>
+<p>대부분 순수한 static 술어들의 모음: <code>HoursSince/ToUTC/CurrentDailyResetUTC</code>(UTC 06:00 리셋), <code>WasAfterDailyReset/GetFlag/FlagIsExpired</code> 등. <code>InjectRewardsEligible/InjectPackEligible/IsEligible</code>만 순수하지 않다(<code>botConfig</code>를 읽음).</p>
+
+<h4>AccountScheduler (750줄, 38.3KB) — carddb.exe Rust 로직 이식본</h4>
+<p>옛 Rust 서브커맨드를 1:1로 이식했고, 각 메서드 위에 원본 함수/줄번호를 주석으로 남겼다: <code>ScheduleAccounts</code>(main.rs:2752), <code>CountEligibleForAllInstances</code>(main.rs:2844), <code>BalanceXmls</code>(main.rs:3147). <code>AccountEligibility.IsEligible</code>을 쓰는 대신 자체 <code>Eligible</code>/<code>PackCountAllowed</code>(Rust의 <code>eligible()</code>과 1:1)를 따로 갖는데, 후자는 원더픽 최소 팩수 체크가 섞여 있어서 메타데이터 없는 계정에 대해 Rust와 결과가 달라지기 때문이다.</p>
+
+<h4>AccountQueue</h4>
+<p><code>ScanNext(scriptName, saveDir)</code> — <code>Accounts\Saved\&lt;N&gt;\list_current.txt</code>를 스캔해 다음 주입 가능 계정을 찾고, 자격 없는 항목을 제거·재작성한 뒤 파일 안에서의 1-based 인덱스를 반환한다. 이 파일을 AccountStore로 합칠 수 없는 이유가 헤더에 자세히 문서화돼 있다: 로드 시점 의존성 경계다(진입점 4개가 ScanNext 몸통이 참조하는 이름 없이 AccountStore만 include한다).</p>
+
+<h3>5.3 기기 제어 축: Emulator와 Host</h3>
+<h4>Emulator (926줄, 48.4KB)</h4>
+<p>MuMu 인스턴스 하나와 그 ADB 채널에 관한 모든 것. <b>명령 채널이 두 개고, 절대 섞이지 않는다</b>(헤더 주석):</p>
+<ol>
+<li><b>ADB 채널</b> → <code>RunAdbCommand()</code>: 안드로이드 게스트 <em>안</em>과 대화. 게스트가 부팅돼 있고 ADB 연결이 살아있어야 함.</li>
+<li><b>MuMuManager 채널</b> → <code>RunManagerCommand()</code>: 호스트 실행파일이 인스턴스 <em>자체</em>를 제어(실행/종료/재시작/설정/정보). 게스트가 꺼져 있어도 동작 — 애초에 인스턴스를 켜는 방법이 이거다.</li>
+</ol>
+<p>주요 메서드(약 47개 중 발췌): 설치 폴더 탐색 <code>GetInstallFolderFromConfig/GetInstallFolder</code>(config json → Settings.ini folderPath 폴백, 서브폴더 이름 7개 순회), <code>IsV5/GetVersionBias</code>, 연결 수명주기 <code>ResolveBaseInfo/FindPort/ConnectDevice/InitializeShell/EnsureShell/ReconnectAfterInstanceRestart</code>, PTCGP 앱 제어 <code>StartPtcgpApp/ClosePtcgpApp/TerminatePtcgpProcess/WaitForPtcgpAppFocus/IsHomeScreen/HasPtcgpAppCrash/DumpLogcatToFile</code>, 입력 <code>Tap/TapWithBBox/InputText/SendKeyEvent/Swipe/SendGesture</code>, <code>CaptureScreenshot</code>.</p>
+
+<h4>Host (396줄, 19.0KB, static 네임스페이스)</h4>
+<p>봇이 호스트 Windows 머신에 요구하는 모든 것: PDH GPU 성능 카운터(핸들은 프로세스당 정확히 하나만 소유해야 해서 인스턴스화하지 않음), <code>GetInstanceGpuMemory</code>(WMI PID 조회를 <code>gpuPidCache</code>에 캐시, ProcessExist로만 검증), 커버 창 관리(<code>FindCoverWindow/IsIgnoredCoverWindow/Restore…</code>), 인스턴스 프로세스 <code>LaunchInstance/TerminateInstance/GetInstancePid/RestartInstance</code>, <code>ReloadScript</code>. 여기로 옮긴 함수 20개는 <code>module\Utils.ahk</code>에 같은 이름의 위임 래퍼로 남아있다.</p>
+
+<h3>5.4 화면 인식/카드 축</h3>
+<table>
+<tr><th>클래스</th><th>책임</th></tr>
+<tr><td><code>Coords.ahk</code> 안 클래스 4개</td><td><code>Coordinate</code>(검색 영역, 모서리 4개 + isValid), <code>Needle</code>(needleName/imageName/coords/<code>FailsafeSeconds(fallback)</code> 오버라이드), <code>NeedlesDict</code>(이름→Needle Map), <code>FindResult</code>(success/coordinate/needleName — AHK v2 객체는 항상 truthy라서 호출부가 <code>.success</code>를 명시적으로 확인해야 함).</td></tr>
+<tr><td><code>Card</code></td><td>뽑힌 카드 하나에 대한 값 객체(id/rarity/shinedust/name/illustrationId). 배열 4개를 병렬로 쓰던 걸 대체. <code>ADV_RARITY_*</code> 전역(100~900 스케일)과 <code>Card.Shinedust()/TypeKey()</code>를 소유. 희귀도 700(2성)은 PK_/TR_ id 접두어로 구분한다.</td></tr>
+<tr><td><code>RarityBorder</code></td><td>카드 테두리 검출 좌표/마스크 앵커(4/5/6장 레이아웃용). <b>OCR 인식이 실패했을 때만 도는 휴면 경로</b>, 리팩토링 대상에서 명시적으로 제외됨.</td></tr>
+<tr><td><code>PackAnalysis</code> (1,303줄, 77.8KB)</td><td>정적 중첩 클래스 3개: <code>Detect</code>(팩 로딩 대기, 테두리/OCR 인식, GP/희귀도 판정, 발견 후 저장+디스코드 알림), <code>Trade</code>(S4T XML 배관, 디스코드 헤더, 필터링), <code>Render</code>(합성 팩 이미지, Cloudinary에서 카드 아트 다운로드 — <code>GetCardArtImage</code>, §9.3 참고, ADB 스크린샷). 예전 CardDetection.ahk 자유함수 26개의 실구현.</td></tr>
+<tr><td><code>PackOpeningRun</code> (597줄, 37.9KB)</td><td>1.ahk 메인루프의 4단계를 static 메서드로: <code>Prepare()</code>("run"|"retry") → <code>OpenPacks()</code> → <code>GrindBeginnerMissions()</code> → <code>Finish()</code>("continue"|"exit"). 예전 Goto 라벨(MidOfRun/EndOfRun)은 조기 return이 됐다. 의도적으로 필드를 갖지 않는다(case 충돌 로드 중단 사고 클래스를 방지). Cockpit으로 단계 전환을 <code>CockpitInstancePush</code>를 통해 푸시한다.</td></tr>
+<tr><td><code>PackOpeningState</code></td><td>§5.1 참고 — 31개 필드를 담는 팩 상태 컨테이너.</td></tr>
+</table>
+
+<h3>5.5 인프라 축</h3>
+<table>
+<tr><th>클래스</th><th>책임</th></tr>
+<tr><td><code>Diagnostics</code> (356줄, 19.7KB)</td><td>관측성 채널 3개를 소유하는 static 네임스페이스: <code>Diagnostics.Log</code>(레벨 필터링 파일 로그), <code>Diagnostics.Prof</code>(타이밍), <code>Diagnostics.Discord</code>(웹훅). 자식들이 인스턴스가 아니라 정적 중첩 클래스인 이유는, 파사드 파일들이 #Include 시점에 전역 초기화를 돌리기 때문이다 — 정적 클래스는 로드 시점에 이미 존재하므로 include 순서와 무관해진다.</td></tr>
+<tr><td><code>GuiRegistry</code></td><td>v1의 이름 있는 다중 창 Gui를 대체: 이름→Gui/Ctrl 조회(<code>guis</code>/<code>ctrls</code> 네임스페이스) + destroy-and-forget + 가짜 모달 대기. 독립적으로 자라난 Map 4개(StatusMessageUI/ScriptControlUI/HistoryImport/Recorder)를 통합.</td></tr>
+<tr><td><code>CockpitInstancePush</code> (72줄) <b>— 신규</b></td><td>각 봇 인스턴스 → Cockpit 쓰기 전용 푸시 채널: <code>SetPhase</code>(상수 4개, PackOpeningRun 단계와 1:1), <code>SetActivity/ClearActivity</code>(표시 전용 activity 상수 11개, 기존 SmokeCheckpoint 경계와 1:1), <code>SetLivePacks</code>, <code>SetPaused</code> — 전부 <code>Scripts\N.ini [Cockpit]</code>에 순수 IniWrite. 의도적으로 원자적 커밋 없음(N.ini는 다중 생산자 파일, §1.3 참고), 의도적으로 Read() 없음(어그리게이터의 <code>Agg_ReadInstanceIni</code>가 이미 매 틱 파일 전체를 읽고 있고, 여기 Read를 두면 1.ahk 로드까지 깨진다). 전환은 <code>Logs\Cockpit_Activity.txt</code>에 debug/trace 레벨로 기록돼서, "Activity가 비어 있었다"가 사후에 "ClearActivity가 정상적으로 일찍 불린 것"인지 구분 가능하다(2026-08-10). Main 워커는 가드로 no-op.</td></tr>
+<tr><td><code>RunContext</code></td><td>§5.1 참고 — 실행 컨텍스트 필드 55개.</td></tr>
+<tr><td><code>Account</code></td><td>§5.1 참고 — 계정 필드 25개 + mission/history 합성.</td></tr>
+</table>
+
+<h2>6. Scripts\module\ — 폴더별 핵심 모듈</h2>
+
+<h3>6.1 최상위 파일 7개 (파사드와 횡단 관심사)</h3>
+<table>
+<tr><th>파일</th><th>책임</th></tr>
+<tr><td><code>ADB.ahk</code></td><td>Emulator로 옮겨간 ADB 자유함수의 얇은 래퍼(<code>adbWriteRaw→session.adb.RunAdbCommand</code>, <code>adbClick→Tap</code>, <code>adbClick_wbb→TapWithBBox</code> 등 총 40개 정도), 수백 곳의 호출부를 보존. 상태 없는 헬퍼 3개만 남음(<code>ADB_RedactCommand</code> — "input text"를 마스킹, <code>ADB_LogTrace</code>, <code>waitadb</code>).</td></tr>
+<tr><td><code>MumuHelper.ahk</code></td><td><code>getMuMuFolder()→Emulator.GetInstallFolder()</code>로 위임. MuMuManager 채널 래퍼 10개는 호출부가 0곳이라 삭제됨(채널 자체는 Emulator.RunManagerCommand로 남아있음).</td></tr>
+<tr><td><code>Utils.ahk</code> (17.7KB)</td><td><code>Delay/DelayH</code>(설정에 비례한 sleep), 날짜 연산(<code>getChangeDateTime</code> 서버 리셋), 정렬/비교, 설정 마이그레이션(<code>MigrateDeleteMethod</code>), <code>getScriptBaseFolder()</code>(PTCGPB.ahk가 있는 폴더를 마커로 위로 걸어 올라감), Host 위임 래퍼 20개.</td></tr>
+<tr><td><code>Config.ahk</code></td><td><code>BotSettings</code>: Settings.ini 로드/저장 + UI 컨트롤명→설정키 맵(<code>mainConfigUIMap</code> 등). <code>botConfig.get/set</code>.</td></tr>
+<tr><td><code>Session.ahk</code></td><td><code>SessionStore</code> — §5.1 참고.</td></tr>
+<tr><td><code>DiscordLogger.ahk</code></td><td>Diagnostics.Discord 파사드.</td></tr>
+<tr><td><code>AdvancedPocketTool.ahk</code> (16.1KB)</td><td>ptcgpb 바이너리를 대체한 안드로이드 카드 판독 헬퍼 <code>adv_pocket_tool</code>의 설치/런타임 유틸. 흐름: 티켓 생성(<code>GenerateTicket</code>, 16진수 8자) → 백그라운드에서 <code>--monitor</code> 시작 → 팩 열기 버튼 클릭 → <code>/data/ptcgp/result/&lt;ticket&gt;.result|.error</code> 폴링 → <code>--carddetail</code> 실행 후 결과 JSON 파싱(카드 id/rarity/name → <code>Card</code> 배열). 설치는 <code>crinitys.github.io/tools/adv_pocket_tool_android</code>에서 받아 sdcard 경유로 <code>/data/ptcgp/</code>에 스테이징하고, 최소 크기 체크로만 다운로드 잘림을 방어한다(한계를 <code>ponytail:</code> 주석으로 명시).</td></tr>
+</table>
+
+<h3>6.2 Recognition\ — 니들 검색, OCR, 에러 팝업</h3>
+
+<h4>ScreenSearch.ahk — 니들 검색 서비스 (정책 없음)</h4>
+<p>Main.ahk, 1.ahk, _SendFriendRequest.ahk에서 각각 독립적으로 세 번 구현돼 있던 "창 캡처 → 니들 조회 → 검색 → (행동 반복)" 로직을 흡수한 서비스 클래스.</p>
+<ul>
+<li><code>Search(hwnd, needleName, opts)</code>: 1회성 캡처+검색. 매치 위치("x,y") 또는 false 반환. 캡처한 프레임에 대해 <code>ErrorCheckInScreen</code>을 <b>동적 조회</b>로 호출(에러 모듈을 include 안 한 호출부는 조용히 건너뜀 — 조회만 try로 감싸고, 실제 Call은 삼키지 않음).</li>
+<li><code>SearchIn(bmpPointer, imageName, x1,y1,x2,y2, variation)</code>: 이미 캡처된 프레임을 재검색(같은 프레임에 니들 N개를 대도 캡처는 한 번만 든다).</li>
+<li><code>SearchWithAction(hwnd, needleName, actionFn, opts)</code>: 찾을 때까지 actionFn 반복. <code>pollIntervalMs</code>(기본 100)와 <code>actionIntervalMs</code>가 분리돼 있어(원래의 "100ms마다 검색, sleepTime ms마다 클릭" 분할을 재현), <code>giveUpTimer</code>(만료→false 반환), <code>stuckTimer</code>+<code>onStuck</code>(만료→교정 콜백 후 Reset — 루프는 계속 돔).</li>
+<li><code>NeedlesDir()</code>: <code>getScriptBaseFolder()\Scripts\Needles\</code> — 호출부의 A_ScriptDir과 무관.</li>
+<li><b>왜 module/에 있나</b>: needlesRegistry(게임 데이터)에 의존하기 때문. GDIPService를 상속이 아니라 <b>합성</b>한다 — GDIPService는 기반 클래스가 아니라 대등한 엣지용 API다(헤더 주석).</li>
+<li><b>왜 여기 복구 정책이 없나</b>: Search/SearchWithAction은 순수 메커니즘이다. Timer를 만들고 Expired()가 뭘 뜻하는지(포기 vs 재시작) 결정하는 건 각 호출부의 몫 — 그 정책 계층이 FindImageWithAction이다.</li>
+</ul>
+
+<h4>FindImageWithAction.ahk — 찾기+행동 통합 프리미티브 (정책 계층)</h4>
+<p>예전 <code>FindOrLoseImage</code>/<code>FindImageAndClick</code>(1.ahk와 Main.ahk에 미묘하게 다르게 중복 정의돼 있었음)을 대체. 멈춤 복구 정책(<code>restartGameInstance</code>)을 소유.</p>
+<ul>
+<li><b>findParam</b>(전부 선택): <code>searchVariation</code>(20), <code>limitTime</code>(멈춤 복구까지 걸리는 초 — 지정 안 하면 니들 레지스트리의 <code>failsafeSeconds</code> 오버라이드를 참조, 없으면 45. Country/Social/Points=90초, Missions=60초 같은 오버라이드가 한동안 조회되지 않아서 느리게 로딩되는 화면을 멈춤으로 오판, 인스턴스를 반복 재시작시켰다 — 61행이 그 수정이고, 실측 사고 일자가 주석에 2026-08-08로 남아있다. stuck 사유 문자열엔 이제 <code>elapsedTime/limitTime</code>이 박혀서 로그만 봐도 어떤 한도가 적용됐는지 증명 가능), <code>delay</code>(행동 재시도 간 ms), <code>count</code>(-1=내부 폴링 무제한, 1=1회성 — 코드베이스에 다른 값은 없음), <code>findType</code>(FIND_NORMAL|FIND_INVERT), <code>silent</code>, <code>giveUpTime</code>, <code>stuckRecoveryEnabled</code>, <code>elapsedTime</code>(count=1일 때 호출부가 누적하는 경과), <code>matchPolicy</code>(FIRST|ANY|ALL).</li>
+<li><b>actionParam</b>: <code>ACTION_CLICK</code>{x,y} / <code>ACTION_IDLE</code> / <code>ACTION_LOOP_ESCAPE</code> / <code>ACTION_MULTIPLE_NEEDLES</code>{entries}.</li>
+<li><b>반환값</b>: 항상 <code>FindResult</code> — 순수 불리언이 아님.</li>
+<li><b>니들 브레드크럼</b>: <code>FindImageWithAction_TrackNeedle()</code>이 세션 안에 최근 <b>서로 다른</b> 니들 3개(Prev2/Prev1/Current)를 유지 — restartGameInstance의 "STUCK DETECTED" 로그 줄의 재료.</li>
+<li><b>상태 스로틀</b>: "Finding X..." 상태 메시지는 500ms에 한 번으로 스로틀됨(109-125행 주석에, 스로틀이 빠졌을 때 툴바 첫 버튼이 깨지던 리페인트 버그가 문서화돼 있음).</li>
+<li><b>slowMotion 가드</b>: <code>Crinity_SpeedMod/1x/2x/3x</code> 이미지는 검색 없이 조기 성공 반환(예전 가드는 블록 주석 안에만 존재하던 이미지 이름과 비교하고 있어서 초기 커밋부터 죽어있었음 — 실제 이름 기준으로 복구: 146-149행).</li>
+<li><b>다중 니들 최적화</b>: 항목마다 창을 다시 캡처하는 대신 한 번만 캡처해서 같은 프레임을 <code>SearchIn</code>으로 재검색, 에러 체크도 프레임당 한 번(실측 최적화, 일자 2026-08-09, 206-212행 주석).</li>
+<li>count=1 && 매치 없음 && <code>elapsedTime ≥ limitTime</code> → <code>restartGameInstance("Stuck at &lt;image&gt;... (elapsedTime=…s, limitTime=…s)")</code>. count=-1이면 stuckTimer 만료 시 onStuck에서 동일하게 처리.</li>
+</ul>
+
+<h4>NeedleRegistry.ahk / Error.ahk / OCR.ahk / CardDetection.ahk</h4>
+<ul>
+<li><code>NeedleRegistry.ahk</code>(19.2KB): <code>global needlesRegistry := NeedlesDict()</code>에 <code>Add(Needle(이름, 이미지, Coordinate(x1,y1,x2,y2) [, failsafeSeconds]))</code> 호출 <b>159건</b>, 도메인별 그룹(Friend/Wonderpick/Pack/Menu/Common/Privacy/…). 클래스 정의는 classes\Coords.ahk에, 데이터는 여기에 — 의도적 분리.</li>
+<li><code>Error.ahk</code>: 에러 니들 6개(<code>Common_Error*</code>)를 핸들러 함수에 매핑(<code>errorFuncList</code>). ScreenSearch가 매 프레임 <code>ErrorCheckInScreen(bmp)</code>를 부르기 때문에, 이 체크는 1.5초에 한 번으로 스로틀됨(에러는 드물고 1~2초 지연은 감내 가능 — 최적화 #2, 2026-08-09).</li>
+<li><code>OCR.ahk</code>(22.9KB): Windows.Media.Ocr(WinRT) 래퍼 — HBitmap→RandomAccessStream→OCR. 카드 이름 인식의 주 경로.</li>
+<li><code>CardDetection.ahk</code>: <code>PackAnalysis</code>로 위임하는 파사드(동일 이름 자유함수 래퍼 26개, <code>GetCardArtImage</code> 포함).</li>
+</ul>
+
+<h3>6.3 Stage\ — 게임 내 UI 흐름</h3>
+<table>
+<tr><th>파일</th><th>책임</th></tr>
+<tr><td><code>FriendManager.ahk</code> (1,039줄, 50.7KB)</td><td>친구 추가(클립보드 뮤텍스 <code>Global\PTCGPB_FriendCodeClipboard</code>로 코드 입력), 전체 삭제, 친구코드 취득, 쇼케이스 좋아요, 거래 튜토리얼. FriendAdd/FriendRemove/Showcase 플러그인 훅을 발화.</td></tr>
+<tr><td><code>MissionAndRewards.ahk</code> (689줄, 30.1KB)</td><td>미션 수령/선물팩/원더픽/이벤트 보상 UI 흐름. 완료 시 Mission/History 플래그 기록, DailyMission/SpecialMission/Gift/Wonderpick 훅 발화.</td></tr>
+<tr><td><code>CreateAccount.ahk</code> (500줄, 24.1KB)</td><td>메뉴 기반 계정 삭제(menuDelete/menuDeleteStart)와 신규 계정 튜토리얼(DoTutorial).</td></tr>
+<tr><td><code>Crinity_UnofficialPatch.ahk</code> (11.8KB)</td><td>게임 클라이언트 특화 처리: 개인정보/약관 팝업 처리, 앱 실행 보조, 스피드모드 처리.</td></tr>
+<tr><td><code>HourglassSpend.ahk</code></td><td>모래시계 소모 목표/잔여 연산 + 세션 카운터.</td></tr>
+<tr><td><code>SpecialEvent.ahk</code> (9.9KB)</td><td><code>SpecialEvent</code> 클래스 — 이벤트 배너(빨강/파랑 박스 base64 이미지 + 좌표 + 만료) 검증과 감지. <code>.sevt</code> 파일 로드.</td></tr>
+</table>
+
+<h3>6.4 Persist\ — 계정/이력/위시리스트 영속화 흐름</h3>
+<table>
+<tr><th>파일</th><th>책임</th></tr>
+<tr><td><code>AccountManager.ahk</code> (566줄, 27.5KB)</td><td><code>loadAccount()</code>(_InjectAccount 경로로 XML 주입), 계정 저장, 큐 목록 생성(<code>createAccountList</code>, <code>Global\PTCGPB_ScheduleAccounts</code> 뮤텍스로 가드), 사용된 계정 추적, 팩 수 파일명 갱신, <code>AccountEligibility_IsEligible</code>(여기 남은 이유는 로드 시점 의존성 경계 — 이 함수가 없으면 AccountQueue를 include할 수 없음).</td></tr>
+<tr><td><code>Database.ahk</code> (13.0KB)</td><td>거래 CSV 로깅, JSON 인덱스, XML에서 deviceAccount 추출, 스크린샷 크롭.</td></tr>
+<tr><td><code>HistoryImport.ahk</code> (15.2KB)</td><td>게임 수령 이력 내보내기 / My Collection 임포트(Main.ahk 전용, lib\HistoryParser 공유).</td></tr>
+<tr><td><code>Wishlist.ahk</code></td><td>대시보드가 쓴 <code>Accounts\Cards\wishlist.json</code>을 mtime 변화로 감지해 재로드, CheckPack에서 위시카드 플래그.</td></tr>
+</table>
+
+<h3>6.5 GameData\ — 정적 게임 데이터</h3>
+<table>
+<tr><th>파일</th><th>책임</th></tr>
+<tr><td><code>Data.ahk</code></td><td><code>Data\packdata.dat</code> 파싱(<code>parsePackData</code>)과 언어 사전 로드(<code>parseDictionaryData</code> en/de/jp/cn).</td></tr>
+<tr><td><code>Packs.ahk</code></td><td><code>PackCoordinate</code> 클래스 + 확장팩 화면 좌표 생성(<code>generatePackCoordinates</code>).</td></tr>
+<tr><td><code>CardNames.ahk</code></td><td>희귀도→이모지 라벨 매핑과 카드 이름 헬퍼.</td></tr>
+</table>
+
+<h3>6.6 Tools\ — 독립 실행 운영 도구</h3>
+<table>
+<tr><th>파일</th><th>책임</th></tr>
+<tr><td><code>Monitor.ahk</code> / <code>MonitorOnce.ahk</code></td><td>죽은 인스턴스 감시/1회성 변형(진입점 — §2 참고). <b>진짜</b> Emulator/Host를 include하고(§1.3 참고), <code>CreateStatusMessage</code>만 스텁.</td></tr>
+<tr><td><code>LaunchAllMumu.ahk</code></td><td>MuMu 일괄 런처(진입점). 최소 <code>Emulator</code> 스텁 유지(25행).</td></tr>
+<tr><td><code>Recorder.ahk</code> (20.4KB)</td><td>마우스 동작 기록 → AHK 코드 생성(개발용 도구; 핫키는 현재 비활성 — 1.ahk가 관련 전역을 falsy로 유지해서 v2가 미할당 참조로 안 죽음).</td></tr>
+<tr><td><code>ResetLists.ahk</code></td><td>Accounts\Saved 큐 1회성 정리.</td></tr>
+</table>
+
+<h3>6.7 Ui\ — 인스턴스별 오버레이와 툴바</h3>
+<h4>StatusMessageUI.ahk</h4>
+<ul>
+<li><code>CreateStatusMessage(Message, GuiName:="StatusMessage", X, Y, debugOnly, Persist)</code>: MuMu 창에 붙는 275×40 플로팅 텍스트 창. 창/컨트롤은 GuiName+scriptName을 키로 <code>StatusMessageUI_Registry</code>(GuiRegistry)에 등록·재사용.</li>
+<li>Z-순서: 생성 시 딱 한 번 HWND_BOTTOM — 1.ahk의 Reload/Pause/Stop 툴바(1.ahk:225-274)와 겹치던 문제는, 툴바 생성 후 상태 창을 HWND_BOTTOM으로 한 번 더 내려서 고쳤다(양쪽 주석에 사고 경위가 남아있음).</li>
+<li><code>SetReposition()</code>: 타이머가 MuMu 창 이동을 추적. WinGetPos는 숨겨진 창에서 예외를 던지므로 <code>Gui.GetPos()</code>를 씀.</li>
+<li><code>Cockpit_WriteLiveMetrics()</code>: 여전히 검증만 하고 바로 리턴하는 no-op 스텁(126행) — 실제 인스턴스→Cockpit 푸시는 이제 <code>classes\CockpitInstancePush.ahk</code>를 통한다(§5.5, §8).</li>
+</ul>
+<h4>ScriptControlUI.ahk (17.7KB)</h4>
+<p>Pause/Stop/Reload/DevMode 툴바 + 핫키(Shift+F5~F8), 전체 인스턴스 정지. <code>CockpitInstancePush.SetPaused</code>로 Paused 상태를 Cockpit에 푸시(반드시 <code>Pause(1)</code>이 스레드를 얼리기 <em>전에</em> 실행돼야 함).</p>
+
+<h3>6.8 Plugin\ — §13 참고.</h3>
+
+<h2>7. 화면 인식 스택 (GDI+ 4계층)</h2>
+
+<pre>
+ (정책)     Recognition\FindImageWithAction ─ 멈춤복구, limitTime, 상태표시, FindResult
+              │ 사용
+ (서비스)   Recognition\ScreenSearch ─ 레지스트리 조회 + 캡처/검색/반복(합성, 정책 없음)
+              │ 사용                          │ 조회
+ (엣지 API) GDIPService extends GDIPEngine    needlesRegistry(니들 159개)
+              │  CaptureWindow(PrintWindow)   │
+              │  CaptureViaAdbScreencap       └─ Needle{imageName, coords, failsafeSeconds}
+              ▼
+ (엔진)     GDIPEngine ─ ImageSearch(+MuMu v4 y-바이어스, bbox 디버그), GetNeedle 캐시, base64
+              │ 사용
+ (알고리즘) Gdip_Imagesearch.ahk(Gdip_ImageSearch) + Gdip_All.ahk(GDI+ 기본 함수)
+              │ 생성
+ (값 객체)  ScreenBitmap {pointer, Dispose()}
+</pre>
+
+<p>캡처는 <code>PrintWindow(hwnd, hdc, 0x3)</code>라서 에뮬레이터 창이 다른 창에 가려져도 동작한다. 니들 비트맵은 한 번 로드되면 <code>GDIPEngine.GetNeedle</code>의 static Map에 캐시된다. <code>isMuMuV4_test</code>가 설정되면 검색 y좌표에 -3 바이어스가 붙는다.</p>
+
+<h2>8. Cockpit 모니터링 서브시스템</h2>
+
+<h3>8.1 파일 5개 (+ 푸시 클래스)</h3>
+<table>
+<tr><th>파일</th><th>역할</th></tr>
+<tr><td><code>Cockpit.ahk</code> (3,427줄)</td><td>진입점이자 GUI. 다크테마 ListView(인스턴스별 상태/계정/리롤/ETA), Events 탭, 열 커스터마이징, 컨텍스트 메뉴(인스턴스 죽이기/재시작), <code>--injection-queue</code> 모드도 겸함. 핫키: Shift+F9(종료), F5(강제 새로고침). <b>no-op 스텁</b> Host/Emulator 클래스를 선언(49-81행) — 대시보드는 상태 파일만 읽고 에뮬레이터를 절대 안 건드리므로(grep으로 확인, 주석에 기록됨) 무거운 진짜 클래스를 안 끌어온다.</td></tr>
+<tr><td><code>CockpitAggregatorEngine.ahk</code> (908줄)</td><td>인프로세스 어그리게이션 엔진: <code>Agg_InitEngine</code>(세션 마커 복구)과 <code>Agg_TickBody</code>(2초 틱 몸통). 상세는 §10.2.</td></tr>
+<tr><td><code>CockpitState.ahk</code></td><td><code>CockpitState.ini</code> 읽기/쓰기 라이브러리. 단일 생산자(어그리게이터)가 빌더를 조립해 <code>CockpitState_Commit</code>을 부른다(원자적 tmp→ini 스왑). GUI는 리더.</td></tr>
+<tr><td><code>CockpitMetrics.ahk</code></td><td>순수 통계: 링 버퍼(50 용량), ETA/신뢰도, 스파크라인, 30분 단위 트렌드 빈 12개 = 6시간 창.</td></tr>
+<tr><td><code>CockpitInjectables.ahk</code></td><td>인스턴스별 주입 가능 계정 카운터. 소스 체인: <code>list_current.txt</code> → <code>list.txt</code> → 원본 XML 개수(근사). TTL 캐시 + <code>Injectables_InvalidateCache()</code>.</td></tr>
+<tr><td><code>classes\CockpitInstancePush.ahk</code></td><td>생산자 쪽(워커가 include, Cockpit이 아님): 값이 바뀌는 순간 Phase/Activity/LivePacks/Paused를 <code>N.ini [Cockpit]</code>에 푸시 — §5.5 참고.</td></tr>
+</table>
+
+<h3>8.2 데이터 소스</h3>
+<p>어그리게이터는 봇 프로세스와 어떤 IPC도 하지 않는다 — <b>파일만 읽는다</b>: 인스턴스별 <code>Scripts\N.ini</code>의 <code>[Metrics]</code> 섹션(LastStartEpoch/LastEndEpoch/rerolls/currentAccount) + <code>CockpitInstancePush</code>가 푸시하는 <code>[Cockpit]</code> 섹션(Phase/Activity/LivePacks/Paused), <code>Scripts\Main.ini</code>, <code>HeartBeat.ini</code>(120초 이상 갱신 없으면 하트비트 유실), 인스턴스 창 존재 여부(<code>WinExist("\N.ahk ahk_class AutoHotkey")</code> — 백슬래시를 빼면 "2.ahk" 검색이 "12.ahk"도 잡아서 죽은 인스턴스를 살아있다고 오판했다; 404행 주석), 상태 오버레이 창 텍스트, 로그 파일, <code>Settings.ini</code>.</p>
+
+<h2>9. 카드 대시보드 (HTTP 서버) 서브시스템</h2>
+
+<h3>9.1 서버 뼈대와 라우트</h3>
+<ul>
+<li><b>교체 이력</b>: Rust <code>carddb.exe</code>(axum)와 PowerShell HttpListener 스크립트, 서버 2개가 네이티브 AHK <code>DashboardServer</code> 하나로 통합됐다.</li>
+<li><code>DashboardServer.ahk</code>(197줄): HttpServer 인스턴스 생성/시작/정지, 라우팅 테이블(정확한 경로는 <code>Route()</code>, 접두어 매칭은 <code>RoutePrefix()</code>), 127.0.0.1/::1 전용 인증, <code>Dashboard\WebRootFS\</code> 정적 서빙, <code>static CardImageLocale</code>(기본 "en_US"). 뼈대만 갖는다: 라우트별 동작은 전부 <code>Route\Route_*.ahk</code> 17개가 소유하고, 각자 자기 <code>static __New()</code>에서 스스로 등록한다 — 라우트를 추가해도 이 서버 파일은 건드릴 필요 없음(#Include 한 줄만).</li>
+<li><code>DashboardShared.ahk</code>(634줄): 라우트가 공유하는 헬퍼 — <code>Dashboard_IsLocalAddress</code>(인증 술어, PowerShell 서버의 Is-LocalRequest를 이식한 순수 함수), <code>Dashboard_ResolveWebRootFile</code>(<code>Dashboard\WebRootFS\</code> 밖으로 절대 못 나가는 정적 경로 해석 — 옛 서버들은 설치 폴더 전체를 웹 루트로 노출했었음), JSON/응답 헬퍼(<code>Dash.*</code>).</li>
+<li>라우트 17개: Ping, Instances, LaunchInstance, Shutdown, Inject, Wishlist, SettingsFriendId, DashboardRows, AccountsData, AccountsSummary, AccountJsonOpen, AccountCardMarks, AccountShinedustDeduct, CardImage, CardImagesPrefetch/PrefetchStop/Status.</li>
+<li><b>프로세스 경계</b>: 서버는 항상 독립 프로세스 <code>DashboardServerHost.ahk</code>로 돈다. PTCGPB.ahk와 Cockpit.ahk 둘 다 <code>DashboardServerLauncher.ahk</code>(ping/Run/shutdown만 하는 얇은 원격 제어)를 include — Cockpit은 스텁 Host/Emulator 전략 때문에 무거운 서버 체인을 직접 include할 수 없다(파일 헤더에 근거 기록됨).</li>
+</ul>
+
+<h3>9.2 카드 아트 파이프라인 — Cloudinary 이관 (2026-08-10)</h3>
+<p>카드 아트는 원래 <code>crinitys.github.io</code>에서 서빙됐는데, 이미지 약 1만4천장 때문에 그 저장소가 GitHub Pages
+1GB 발행 한도를 넘어서서, 원본을 <b>Cloudinary</b>로 다시 올렸다. 이제 소비자 둘 다 같은 URL 형태를 쓴다:
+<code>https://res.cloudinary.com/crinitycloud/image/upload/images/&lt;lang&gt;_&lt;country&gt;/&lt;illustrationId&gt;.png</code>
+(버전 세그먼트 불필요 — 실제 호스트로 실측 확인됨):</p>
+<ul>
+<li><b>봇 쪽</b>: <code>PackAnalysis.Render.GetCardArtImage(illustrationId, lang, country, cacheDir)</code>(<code>PackAnalysis.ahk:1223</code>) — 디스코드에 올릴 합성 팩 이미지용으로 카드 한 장의 아트를 다운로드하며, PNG 시그니처로 응답을 검증한다(그렇지 않으면 200 응답의 HTML 안내 페이지가 "유효한" 이미지로 영구히 캐시될 수 있음).</li>
+<li><b>대시보드 쪽</b>: <code>Route_CardImagesPrefetch.ahk</code>("Use local card images") — <code>Helper\cardmap.json</code>의 모든 고유 illustrationId를, 타이머로 펌프되는 비동기 WinHttpRequest 약 20개 동시 실행으로 일괄 프리페치한다(AHK는 단일 스레드라서 수천 장을 순차 다운로드하면 수십 분 걸림). 202 + 폴링용 <code>/card-images/status</code>를 반환하고, 서버가 멈추면 다운로드도 같이 멈춘다(<code>DashboardServer.OnStop</code>).</li>
+</ul>
+
+<h3>9.3 로케일별 이미지 캐시</h3>
+<p>다운로드 캐시는 <code>Cache\CardImageCache\&lt;lang&gt;_&lt;country&gt;\&lt;illustrationId&gt;.png</code>다 — 2026-08-10부로
+로케일별 하위폴더로 분리됐는데, 일부 카드가 언어마다 같은 illustrationId에 다른 그림을 쓰기 때문이다. 폴더 하나로
+합쳐놨을 때는 언어를 바꿔도 이전 언어의 캐시된 아트가 그대로 반환됐다(사용자 실측 제보). 소비자:</p>
+<ul>
+<li>봇은 로드된 계정의 언어 메타데이터에서 로케일을 고른다(<code>GetCardArtImage</code>의 lang/country 인자로).</li>
+<li>대시보드는 계정 맥락이 없어서, 호스트 GUI(<code>DashboardServerHost.ahk</code>)가 11개 로케일 선택기(en_US … id_ID)를 제공해 <code>DashboardServer.CardImageLocale</code>을 설정한다 — 프리페치와 서빙 둘 다 이 값을 기준으로 한다.</li>
+<li>브라우저로의 서빙은 <code>GET /card-image/&lt;illustrationId&gt;</code>(<code>Route_CardImage.ahk</code>, RoutePrefix 라우트)를 거친다 — 옛 페이지는 캐시 폴더를 직접 GET했는데, 이건 설치 폴더 전체가 웹 루트였기 때문에만 가능했다. 이 라우트는 id를 세탁하고, 캐시 폴더 밖으로 벗어나는 경로는 거부하며, <code>public, max-age=86400</code>으로 서빙한다(카드 아트는 절대 안 바뀌므로).</li>
+</ul>
+
+<h2>10. 실행 흐름도</h2>
+
+<h3>10.1 메인 루프: 시작 → 계정 → 인식 → 행동</h3>
+<pre>
+[PTCGPB.ahk]
+  GUI에서 설정 → StartBot() (2567행)
+    ├─ 경로 검증(공백/200자), 진단 로그레벨 확인, 계정 목록 리셋
+    ├─ runMain이면: Main.ahk를 Main2..N으로 복사, 각각 Run()
+    ├─ Cockpit 세션 마커 쓰기(CockpitSession.ini), 런타임 상태 삭제
+    ├─ PluginEngine_GenerateManifest()  → Scripts\_plugins.g.ahk (한 번, 워커 복사 전)
+    ├─ Instances 개수만큼: 1.ahk를 N.ahk로 복사 → N.ini Metrics 리셋
+    │    + 낡은 [Cockpit] 섹션 삭제 → Run()
+    ├─ autoLaunchMonitor면: module\Tools\Monitor.ahk Run()
+    └─ startCockpitWithBot(13P 아닌 모드)면: Cockpit.ahk Run()
+
+[Scripts\N.ahk (1.ahk 사본)] 자동실행
+    1. #Include 체인 로드 → session := SessionStore(), botConfig 로드
+       → #Include *i _plugins.g.ahk (98행 — botConfig 대입 이후;
+         플러그인 등록 로그가 Diagnostics를 거치는데 그게 botConfig를 읽어서,
+         더 이른 include는 로드 시점에 죽었었다: 순서버그, 5104468c에서 수정)
+    2. parsePackData / 사전 4개 / 세션 키 초기화
+    3. DirectlyPositionWindow → setADBBaseInfo → ConnectAdb
+    4. DisableBackgroundServices(별도 adb.exe 프로세스로)
+    5. Reload/Pause/Resume/Stop/DevMode 툴바 GUI 구성(225-274행)
+    6. initializeAdbShell(상주 shell + su)
+    7. injectMethod면: createAccountList → loadAccount()
+       └─ AccountQueue.ScanNext(list_current.txt) → XML 주입(_InjectAccount 경로)
+          → AccountStore.LoadAccount → session.account.mission.Load(flags)
+    8. DeadCheck=1이면: 복구 경로(친구 해제 → 메타데이터 갱신 → SafeReload)
+    9. 메인 루프(368-393행):
+       Loop {
+         Fire("RunPhase","before",{phase:"Prepare"})
+         PackOpeningRun.Prepare()               // "retry" → continue
+         if (deleteMethod != "Inject Rewards") {
+           PackOpeningRun.OpenPacks()           // 팩 선택 → 열기 → 카드 감지
+           PackOpeningRun.GrindBeginnerMissions()
+         }
+         PackOpeningRun.Finish()                // "exit" → CleanupBeforeExit + ExitApp
+         // 단계마다 PluginEngine.Fire RunPhase before/after로 감싸이고,
+         // 각 단계 진입마다 CockpitInstancePush.SetPhase(...) 푸시
+       }
+
+[팩 한 장을 여는 동안의 인식-행동 사이클]
+  PackOpeningRun.OpenPacks()
+    └─ FindImageWithAction("needleName", {count/limitTime/...}, {type: ACTION_CLICK, data:{x,y}})
+         ├─ needlesRegistry.Get(needle) → failsafeSeconds 오버라이드 적용
+         ├─ ScreenSearch.Search(hwnd, needle)
+         │    ├─ GDIPService.CaptureWindow(hwnd)   ← PrintWindow 캡처
+         │    ├─ GDIPEngine.ImageSearch(frame, needle bitmap, region, variation)
+         │    └─ ErrorCheckInScreen(frame)          ← 1.5초 스로틀, 에러 팝업 6종
+         ├─ 매치 → adbClick_wbb(x,y) = session.adb.TapWithBBox
+         │           └─ RunAdbCommand("input tap x y") → 상주 shell
+         └─ 여전히 못 찾음 → limitTime 후: restartGameInstance("Stuck at ...")
+  카드 판독: AdvancedPocketTool 티켓 → .result 폴링 → --carddetail JSON
+    → Card[] → PackAnalysis.Detect(GP/희귀도/위시리스트 판정)
+    → 발견 시: 계정 XML 보존 + AccountStore/History로 기록 + 디스코드 알림
+      (+ PluginEngine.Fire PackOpening.after / GodPack / FoundTradeableCard)
+</pre>
+
+<h3>10.2 Cockpit 어그리게이션 흐름</h3>
+<pre>
+[봇 인스턴스 N개]                          [Cockpit.ahk 프로세스]
+  각자 Scripts\N.ini [Metrics] 갱신           Agg_InitEngine()
+  (LastStartEpoch/LastEndEpoch/               ├─ CockpitSession.ini 마커 → 세션 복구
+   rerolls/currentAccount)                    └─ 이전 상태 없으면: "과거 로그 무시"
+  + [Cockpit] Phase/Activity/
+   LivePacks/Paused 푸시(CockpitInstancePush) 2초마다: Agg_TickBody()
+  HeartBeat.ini 갱신                           ├─ Settings.ini 재로드(Instances/모드)
+  상태 오버레이 창 텍스트                      ├─ 트렌드 빈 이동(30분 단위)
+  로그 파일                                    ├─ Injectables_GetAll(list_current.txt…)
+        │                                     ├─ Loop N: Agg_ReadInstanceIni(N)
+        │  (IPC 없음 — 파일/창 관찰)          │    + 창 생존 확인("\N.ahk ahk_class ...")
+        └────────────────────────────────────►│    + 오버레이 텍스트 + 푸시된 Phase/Activity
+                                              │      → 상태 판정
+                                              │      (running/stuck/idle/dead)
+                                              ├─ Agg_ReadMainIni()(Main 워커 상태)
+                                              ├─ Metrics_*(ETA/링/트렌드/알림)
+                                              ├─ Agg_EmitEvent(이벤트 링)
+                                              ├─ Agg_WriteState(...)
+                                              │    └─ CockpitState_Commit(builder)
+                                              │         = tmp에 쓰고 → CockpitState.ini로 원자적 교체
+                                              └─ Agg_SaveRuntimeState(CockpitRuntime.ini)
+
+                                             1초마다: GUI 타이머
+                                              └─ CockpitState_Read() → ListView/Events 갱신
+</pre>
+
+<h3>10.3 AccountStore 스냅샷/복구 흐름</h3>
+<pre>
+[스냅샷: AccountStore.SnapshotAccounts(progressFn)]  ← PTCGPB.ahk의 주기 타이머 / 시작 시
+  1. GatherDashboardPaths() → accounts\*.json 목록 + 서명
+  2. 서명이 복구 메타의 것과 같으면 → 건너뜀(true 반환)
+  3. Loop Files (N = 수천 개):
+       text := FileRead(f)
+       r := JsonScanMCode.Scan(text)            ← MCode: deviceAccount + 압축 소스 추출
+       실패 시(오손/키 없음) → 파일명 기준 FindInArchiveFile로 폴백
+       entries.Push({deviceAccount, compact})
+       (100/10파일마다 SmokeCheckpoint + progressFn 200ms 스로틀)
+  4. SortByProp(entries) → 스트리밍 쓰기:
+       f.Write('{"ok":true,...,"accounts":[')  ; 조각조각 쓰기(172MB 메모리 내 join 제거)
+       → .tmp → FileMove로 복구 아카이브 교체
+  5. 메타 저장 {signature, accountCount, generatedAt, lastRepair*}
+
+[복구: AccountStore.RepairAccountsFromSnapshot(progressFn)]
+  1. BuildRepairScanSignature() → 이전 스캔과 동일하고 AND 이전 스캔에서 손상 0건이면 건너뜀
+  2. Loop accounts\*.json:
+       IsAccountFileCorrupted(path)? 아니면 → continue
+       손상 발견 → RepairAccountFileIfCorrupted(deviceAccount)
+         ├─ FindInArchiveFile(archive, account)   ← MCode, 완전 파싱 없이 ~60ms
+         ├─ 없으면 → "not_in_archive"/"no_archive"
+         ├─ BackupCorruptedAccountFile → _repair_backup\
+         └─ 압축 소스를 원자적으로 복원(tmp→rename) → FormatOnDisk
+  3. WriteRepairScanState(signature, corrupted)  ← 다음 건너뛰기 판단의 입력
+</pre>
+
+<h3>10.4 ADB 명령 실행 — 상주 셸 vs 별도 프로세스</h3>
+<pre>
+[상주 셸 확립: Emulator.InitializeShell()]
+  WScript.Shell.Exec("adb -s 127.0.0.1:&lt;port&gt; shell")   ← 상주 프로세스 하나
+  → StdIn.WriteLine("su")                                  ← 루트 권한
+  → 실패 시: disconnect/connect(CmdRet = 별도 프로세스), 이후 백오프 재시도(최대 5회)
+
+[일반 명령: Emulator.RunAdbCommand(command, isReturnning, timeoutMs)]
+  StdIn.WriteLine(command . ";echo;echo done;")
+    ─ 핵심은 맨 앞의 빈 echo: 출력이 개행으로 안 끝나는 명령(cat 등)은
+      마커가 "…}done"처럼 붙어버려서 ReadLine이 영원히 블록될 수 있는데,
+      빈 echo가 마커를 반드시 자기 줄로 시작하게 보장한다
+  Loop StdOut.ReadLine():
+    line = "done"  → 완료(isReturnning이면 누적된 출력 반환)
+    타임아웃 체크  → 줄 사이에서만 발동. 셸이 완전히 침묵하면
+                     ReadLine이 COM 호출 안에서 블록됨 — 이 경우는 여전히
+                     걸림, 유일한 신호는 "done"이 안 붙은 "send" 트레이스뿐(소스 주석)
+    죽은 셸        → InitializeShell()로 재연결 후 재시도
+  실패 시: 최대 3회 재시도, 소진했을 때만 adbShell 리셋 + EnsureShell()
+    (예전엔 catch가 무조건 셸을 리셋해서, 다음 반복이 매번 "String has no StdIn"으로
+     죽었다 — 실측 주석에 따르면 재시도 실패 3건 중 2건이 이 자체-리셋으로 인한 것)
+
+[별도 프로세스로 도는 명령들, 그리고 그 이유]
+  · adb connect / disconnect (CmdRet)
+      → 연결 자체를 만들고 끊는 명령이라, 그 연결 위에서 사는
+        상주 셸을 탈 수가 없다
+  · DisableBackgroundServices 안의 pm disable-user 명령 4개
+      → 각각 독립적으로 "adb -s ... shell pm ..."을 실행 — 상주 셸이
+        초기화되기 전에 실행됨
+  · Emulator.TerminateAdbProcesses
+      → ProcessClose+taskkill로 호스트의 adb.exe 자체를 죽임(채널 명령이 아니라
+        호스트 프로세스 제어)
+  · MuMuManager 채널(RunManagerCommand: launch/shutdown/restart/setting)
+      → 게스트가 꺼져 있어도 동작해야 하는 인스턴스 레벨 제어 — ADB와
+        실패 모드가 달라서 범용 RunCommand 래퍼가 따로 없다(Emulator.ahk 헤더)
+
+[화면 캡처 경로 두 가지]
+  · GDIPService.CaptureWindow          : 호스트 측 PrintWindow(기본, 빠름)
+  · GDIPService.CaptureViaAdbScreencap : 게스트 측 screencap -p | base64
+      → ---START---/---END--- 마커 사이로 상주 셸을 통해 스트리밍
+</pre>
+
+<h2>11. 모듈 간 #Include 의존성</h2>
+
+<h3>11.1 진입점별 include 프로필</h3>
+<table>
+<tr><th>진입점</th><th>Include</th><th>의도적으로 제외</th></tr>
+<tr><td><code>PTCGPB.ahk</code></td><td>lib 대부분, 도메인 클래스(Mission/History/Account/Emulator/Host/GuiRegistry/RunContext/PackOpeningState), Session/GameData\Data/ADB/Ui\StatusMessageUI/DiscordLogger/Stage\SpecialEvent/MumuHelper/Utils, Plugin\Plugin+PluginEngine, AccountStore+AccountEligibility+AccountScheduler, Coords, Card, Dashboard\DashboardServerLauncher, GUI\helptips.ahk</td><td>ScreenSearch/FindImageWithAction/NeedleRegistry(화면 인식 없음), PackAnalysis, FriendManager 등 워커 전용 모듈</td></tr>
+<tr><td><code>Scripts\1.ahk</code></td><td>워커 스택 전체: 위 목록 + Recognition\{OCR, CardDetection, Error, NeedleRegistry, ScreenSearch, FindImageWithAction} / Persist\{Database, Wishlist, AccountManager} / GameData\{CardNames, Packs} / Stage\{FriendManager, SpecialEvent, Crinity_UnofficialPatch, HourglassSpend, MissionAndRewards, CreateAccount} / Ui\ScriptControlUI / classes\{PackAnalysis, AccountQueue, RarityBorder, CockpitInstancePush, PackOpeningRun} / AdvancedPocketTool / <code>#Include *i _plugins.g.ahk</code></td><td>HistoryImport(Main 전용), Dashboard 계열</td></tr>
+<tr><td><code>Scripts\Main.ahk</code></td><td>1.ahk의 인식/계정 스택 + <code>Persist\HistoryImport.ahk</code> + <code>lib\StringCompare.ahk</code></td><td>절대 안 쓰는 팩런 계열: PackOpeningRun/Packs/CreateAccount/MissionAndRewards/HourglassSpend/SpecialEvent/ScriptControlUI</td></tr>
+<tr><td><code>Cockpit.ahk</code></td><td>가벼운 lib들 + Config/Logging + <b>스텁 Host/Emulator 선언</b>(49-81행) + MumuHelper/Utils/AccountStore + Cockpit 엔진 파일 4개 + Dashboard\DashboardServerLauncher</td><td>진짜 Host/Emulator(ADB/Gdip 체인 회피), 인식 계열 전체</td></tr>
+<tr><td><code>Tools\Monitor.ahk</code></td><td><b>진짜</b> Emulator/Host + ADB/MumuHelper/Utils/AccountStore(실제로 <code>Emulator.GetInstallFolder()</code>를 호출하므로)</td><td>ScriptControlUI(대신 <code>CreateStatusMessage</code>를 스텁 — Emulator 재시도 경로가 이걸 참조하지만 Monitor는 그 경로를 실제로 호출하지 않음, grep으로 확인)</td></tr>
+</table>
+
+<h3>11.2 핵심 의존성 체인</h3>
+<pre>
+Recognition\FindImageWithAction ─→ Recognition\ScreenSearch ─→ GDIPService ─→ GDIPEngine ─→ Gdip_Imagesearch/Gdip_All
+        │                                │                        └→ ScreenBitmap
+        │                                └→ needlesRegistry(Recognition\NeedleRegistry.ahk ─→ classes\Coords.ahk)
+        └→ session.adb(Emulator) ─→ Host.RunShellCommand / ADB 상주 셸
+
+AccountStore ─ extends → Metadata ─→ JSON.ahk
+        │  ─→ Mutex, Sanitize, JsonScanMCode, SmokeCheckpoint(자기 include)
+AccountScheduler ─→ AccountEligibility ─→ AccountStore
+AccountQueue ─→ (AccountEligibility_IsEligible: Persist\AccountManager.ahk에 정의 —
+                 로드 의존성 경계 때문에 별도 파일로 유지)
+
+Diagnostics ←파사드─ Logging.ahk / Profiler.ahk / DiscordLogger.ahk
+PackAnalysis ←파사드─ Recognition\CardDetection.ahk
+Emulator ←파사드─ ADB.ahk, MumuHelper.ahk
+Host ←파사드─ Utils.ahk(래퍼 20개)
+SessionStore ─→ Account(→Mission, History) + Emulator + RunContext + PackOpeningState
+PluginEngine ─→ Plugin(카탈로그만; Fire 발화 지점은 PackOpeningRun/FriendManager/
+                MissionAndRewards/HourglassSpend/1.ahk/… 에 있음)
+</pre>
+
+<div class="note">
+<b>Include 관례</b>: (1) 라이브러리는 <code>%A_LineFile%</code> 기준으로 자기 의존성을 스스로 #Include한다. (2) 도메인 클래스(module\classes\*)는 자기 include를 갖지 않는다 — <b>진입점이 include 목록을 소유</b>하며, 이 덕분에 Cockpit의 스텁 대체가 가능했고, 7개 폴더 재분류도 순수한 경로 변경으로 끝날 수 있었다. (3) 일부 모듈 간 호출(<code>ErrorCheckInScreen</code>, <code>bboxAndPause_immage</code>)은 <code>%"name"%</code> 동적 조회로 풀려서, 선택적 의존성이 된다. (4) 플러그인 매니페스트는 <code>#Include *i</code>(선택적)로, <code>botConfig</code> 대입 <em>이후</em>에 include된다 — 플러그인 등록 로그가 호출 시점에 botConfig를 읽는 Diagnostics를 거치기 때문.
+</div>
+
+<h2>12. SelfChecks / dev 도구 / 데이터 자산</h2>
+
+<h3>12.1 SelfChecks (25개 파일)</h3>
+<p>헤드리스 자체 검증 스크립트. AHK v2의 "정의되지 않은 이름을 참조하면 로드가 조용히 멈춘다"는 함정에 실전에서 반복해서 걸린 뒤 만들어진 안전망이다. 하이라이트:</p>
+<ul>
+<li><code>EntryPointLoad_selfcheck</code>: 진입점 12개 전부를 실제 AHK 프로세스로 실행해 깨끗하게 로드되는지 검증. 방법이 헤더에 길게 문서화돼 있다: 같은 폴더에 래퍼(<code>#Warn VarUnset, StdOut</code> + <code>ExitApp</code> + <code>#Include &lt;진입점&gt;</code>)를 두면, 코드는 하나도 실행되지 않은 채로 AHK v2 로더 자신이 이름 해석을 완전히 수행한다 — 정확한 warn 모드는 실측으로 골랐다(All,Off는 조용히 통과, 기본값은 모달 팝업, All,StdOut은 무관한 LocalSameAsGlobal 경고에 파묻힘). 판정은 exit code와 출력을 <b>둘 다</b> 봐야 한다 — 목표 실패 클래스가 exit 0인 채로 StdOut 경고만 남기기 때문.</li>
+<li><code>NameCollision_selfcheck</code>: 저장소 전체에서 대소문자만 다른 필드/메서드 이름(로드를 조용히 멈추게 함)을 사전 탐지.</li>
+<li><code>FindImageWithActionNeedleTrail_selfcheck</code>: 니들 브레드크럼과, 실제 imageName에 대해 slowMotion 가드가 발동하는지를 고정.</li>
+<li><code>PluginEngine_selfcheck</code>: 플러그인 엔진의 등록/검증/충돌/3진아웃/1진아웃-MemberError/타임아웃 동작을 고정.</li>
+<li><code>CockpitInstancePush_selfcheck</code>: 푸시 채널의 쓰기 형태를 고정.</li>
+<li>도메인별: Account/AccountStore/AccountStoreQueue/AccountEligibility/AccountScheduler/Mission/History/PackAnalysis/PackOpeningState/RunContext/Timer/ScreenSearch/Needle/GuiRegistry/Host/Emulator/Diagnostics/DashboardServer/SessionStore/HistoryParser 셀프체크.</li>
+</ul>
+
+<h3>12.2 dev\ (니들 제작 도구)</h3>
+<ul>
+<li><code>NeedleCaptureTool.ahk</code>: 스크린샷에서 니들 좌표/코드를 생성하는 GUI 도구, 줌/패닝/박스 그리기/클릭 포인트/알파블렌드 스냅샷 비교 지원.</li>
+<li><code>NeedleCoordMath.ahk</code> + selfcheck: 순수 수학/코드생성 계층(헤드리스로 검증 가능).</li>
+<li><code>dev\needles\</code>: 캡처 결과 스테이징 폴더(.gitkeep 빼고 gitignore됨) — 캡처물은 검토 후 손으로 <code>Scripts\Needles\</code>로 승격.</li>
+</ul>
+
+<h3>12.3 이미지·데이터 자산</h3>
+<ul>
+<li><code>Scripts\Needles\</code>: 템플릿 매칭용 니들 PNG 216장. 코드 파일보다 이미지 자산이 더 많은 저장소다.</li>
+<li><code>Scripts\Mask\</code>: PNG 73장 + <code>Data\MaskCache.dat</code> — 희귀도 테두리 마스크(캐시는 GenerateMaskCache.ahk가 재생성).</li>
+<li><code>Data\packdata.dat</code>(팩 정의), <code>dictionary_{en,de,jp,cn}.dat</code>(OCR 카드이름 사전), <code>Data\SpecialEvents\</code>(이벤트 배너 데이터).</li>
+<li><code>Cache\CardImageCache\&lt;locale&gt;\</code>: 다운로드한 카드 아트(런타임 생성, gitignore됨) — §9.3 참고.</li>
+</ul>
+
+<h2>13. 플러그인 시스템 (module\Plugin\)</h2>
+<p>2026-08-09에 도입된 서드파티 확장 지점으로, 이제 전용 폴더 <code>Scripts\module\Plugin\</code>에 자리한다.
+저장소 루트 <code>Plugins\</code> 디렉터리 밑의 폴더 하나가 플러그인 하나이며, <code>StartBot</code>마다
+<code>PTCGPB.ahk</code>의 <code>PluginEngine_GenerateManifest()</code>(2951행, 2658행에서 호출 — 한 번만, 워커 복사 전에.
+모든 인스턴스가 생성된 파일 하나를 공유하므로)가 이를 스캔·검증한 뒤 <code>Scripts\_plugins.g.ahk</code>로 인스턴스화 코드를
+생성한다. 워커는 이걸 <code>#Include *i</code>로 끌어와서, 매니페스트가 없어도 단독 로드가 절대 깨지지 않는다. 전체
+사용법과 API 레퍼런스는 <code>docs\Plugin\README.md</code>(한국어)/<code>README-en.md</code>(영어) 참고 — 이 절은
+아키텍처만 요약한다.</p>
+
+<h3>13.1 역할 분담 — Plugin vs. PluginEngine</h3>
+<ul>
+<li><code>Plugin\Plugin.ahk</code>(154줄): 플러그인 작성자가 상속하는 부모 클래스. 훅 타겟 카탈로그(<code>HOOK_TARGETS</code>, 17개)와 각 target.when이 실을 수 있는 ctx 필드 카탈로그(<code>CTX_SHAPES</code>, 35개 항목), 상태 접근 게이트(<code>SessionRead/SessionWrite/ConfigRead/SaveValue/LoadValue/GetPlugin</code>), 개발자 편의 함수(<code>Log/TimerStart/TimerEnd/Dump/Screenshot</code> — 전부 자기 실패를 삼킨다, 그래야 디버깅 헬퍼가 자기가 살펴보던 훅을 3진아웃시키는 일이 없다)를 소유한다.</li>
+<li><code>Plugin\PluginEngine.ahk</code>(271줄, 18.9KB): 인스턴스 등록(<code>RegisterInstance</code>), 충돌 해결(<code>ResolveConflicts</code>), 발화(<code>Fire</code>), 타임아웃 워치독(<code>CheckHookTimeout</code>)을 소유한다. Plugin.ahk의 카탈로그를 참조만 하고 사본을 갖지 않는다 — "정의는 Plugin, 검사·발화는 PluginEngine".</li>
+<li>훅 타겟 17개: <code>RunPhase/Wonderpick/FriendAdd/FriendRemove/InstanceRestart/DailyMission/SpecialMission/Gift/Hourglass/Showcase/PackOpening/GodPack/AccountExhausted/StuckRestart/BeginnerMission/Tutorial/FoundTradeableCard</code> — 각각 자기 타겟이 지원하는 <code>beforeEvent(ctx)/afterEvent(ctx)/onItem(ctx)</code>를 오버라이드한다(<code>onItem</code>은 항목 단위 타겟 4개에만 존재: FriendAdd/FriendRemove/SpecialMission/Showcase).</li>
+</ul>
+
+<h3>13.2 ctx 드리프트 감지 — 문서/코드 불일치 자동 포착</h3>
+<p><code>Fire()</code>가 훅을 호출하기 직전, 실제 ctx의 필드를 <code>Plugin.CTX_SHAPES</code> 선언과 비교해서 선언 안 된 필드가 있으면 <code>Logs\Plugins.txt</code>에 경고를 남긴다(<code>_CheckCtxDrift</code>) — "코드가 카탈로그보다 앞서갔다"는 신호. 모든 ctx엔 <code>DefineProp</code>으로 <code>Get(key, default)</code>가 자동으로 붙어서, 조건부 필드(예: <code>GodPack.after</code>의 <code>cards</code>, 폴백 경로에서는 빈 문자열)를 안전하게 읽을 수 있다 — <code>session.get()</code>/<code>botConfig.get()</code>과 같은 관례. 풍부한 페이로드로는 <code>PackOpening.after</code>(cards/shinedust/pack/lang/country/raw/stopEarly)와 <code>StuckRestart.before</code>(reason/callerFile/callerLine/RL)가 있다.</p>
+
+<h3>13.3 안전장치 네 가지</h3>
+<ul>
+<li><b>3진아웃, 단 1진아웃 예외 있음</b>: 같은 <code>target.when</code>에서 연속 예외 3번이면 그 세션 동안 비활성화. 다만 <code>PropertyError</code>/<code>MethodError</code>(존재하지 않는 프로퍼티/메서드 접근)는 결정론적이라(재시도해도 매번 똑같이 실패) 3진아웃 유예 없이 <b>첫 발생 즉시</b> 비활성화한다.</li>
+<li><b>충돌 해결</b>: 같은 <code>hookTarget</code>+메서드를 플러그인 2개 이상이 구현하면 클래스 이름 알파벳순으로 먼저 오는 쪽이 이긴다. 진 쪽은 그 메서드만 조용히 스킵되지, 전체가 비활성화되진 않는다. 이 판정은 <code>StartBot</code>당 한 번뿐이다 — 이긴 쪽이 나중에 3진아웃돼도 진 쪽이 대신 넘겨받지 않는다.</li>
+<li><b>재진입 가드</b>: <code>CheckHookTimeout()</code>이 멈춘 훅을 감지해 <code>restartGameInstance()</code>를 부르면, 그 호출 자체가 <code>StuckRestart</code> 훅을 발화시켜 <code>Fire()</code>에 재진입할 수 있다. <code>currentHook</code>을 진입 시 저장하고 끝나면 복원하므로, 워치독이 추적하던 바깥쪽(멈춘) 훅 정보가 재진입 호출을 거쳐도 살아남는다.</li>
+<li><b>타임아웃 워치독</b>: <code>HOOK_TIMEOUT_MS</code>(5분)를 넘긴 훅은 기존 멈춤복구 경로(<code>restartGameInstance</code>)로 강제 재시작된다. 이건 <code>SetTimer</code> 콜백으로 돌기 때문에, <code>Sleep</code> 없는 순수 타이트 루프는 끊을 수 없다 — 최선을 다하는 보호이지 강제 종료는 아니다.</li>
+</ul>
+
+<h3>13.4 Plugin Manager UI</h3>
+<p><code>PTCGPB.ahk</code> — 메인창 → Tools &amp; System Settings → Plugin Manager. <code>plugin.ini</code>를 직접 손대지 않고도 플러그인을 켜고, 지우고, 충돌을 살펴볼 수 있는 GUI. 상태 열은 각 플러그인을 ✅(정상) / ⚠️(구조적으론 유효하지만 충돌로 일부 메서드 비활성) / ❌(구조 검증 실패) / 🔴("죽은 플러그인" — 호출 가능한 메서드가 아예 없음)로 색으로 표시하고, ⚠️/🔴 행에는 이유가 마우스오버 툴팁으로 뜬다.</p>
+
+<h3>13.5 예제 12개</h3>
+<p><code>docs\Plugin\examples\</code>에 있다(저장소 루트 <code>Plugins\</code>가 아님 — 실수로 실제 로드되는 걸 막으려고 2026-08-09에 옮김). 하이라이트:</p>
+<table>
+<tr><th>예제</th><th>보여주는 것</th></tr>
+<tr><td><code>HelloWorld</code> / <code>HelloPacks</code></td><td>최소 스캐폴딩 예제 2개</td></tr>
+<tr><td><code>PackCounter</code></td><td><code>SaveValue</code>/<code>LoadValue</code> 영속 상태 + <code>GetPlugin</code> 플러그인 간 참조</td></tr>
+<tr><td><code>TradeableCardForwarder</code></td><td>개인 디스코드 웹훅 포워딩 + 실제 <code>ctx.Get()</code> 사용 + 같은 파일 안 헬퍼 클래스</td></tr>
+<tr><td><code>FriendAddHistory</code></td><td>친구 추가 이력을 별도 텍스트 파일에 기록 + 로직을 <code>#Include</code>로 별도 파일에 분리</td></tr>
+<tr><td><code>StuckLogcatDumper</code></td><td><code>session.adb.RunAdbCommand</code>로 안드로이드 logcat 덤프 저장 + 디스코드 알림</td></tr>
+<tr><td><code>FriendAddWatcher</code> / <code>FriendLimitAlert</code> / <code>WonderpickWatcher</code> / <code>GiftPackTracker</code> / <code>EventShowcase</code> / <code>AccountRetiredArchiver</code></td><td>최근 추가된 ctx 페이로드마다(onItem 스트림, Gift/Wonderpick/Showcase/AccountExhausted의 after) 소비자 예제 하나씩</td></tr>
+</table>
+
+<div class="note">
+플러그인 게이트는 보호장치이지 보안 경계가 아니다 — AHK v2엔 <code>private</code>이 없어서, 플러그인이 <code>session.set()</code>을 직접 불러 게이트를 완전히 우회할 수 있다. 유일한 가치는 허용 범위가 코드로 문서화돼 있고, 위반이 로그로 남는다는 것뿐이다.
+</div>
+
+<hr>
+<p class="meta">이 문서는 2026-08-10에 저장소의 실제 소스(파일 헤더 주석 + 함수/클래스 몸통)를 Read/Grep으로 직접 확인해 전면 재작성됐다 — <code>Scripts\module\</code> 7개 폴더 재분류, Cloudinary 카드 아트 이관, 로케일별 이미지 캐시 분리, CockpitInstancePush 채널 도입이 반영된 뒤의 2026-08-09판을 대체한다. 인용된 줄번호와 실측 수치(예: MCode 19.8초→0.4초, 스트리밍 스냅샷 쓰기, ADB 자체-리셋 버그, Monitor 스텁 오탐 종료)는 전부 소스 코드 자체의 주석과 코드에서 가져왔다. 영문판: <code>project-architecture-en.html/pdf</code>(Fable이 먼저 작성, 이 한국어판은 기본 모델이 번역).</p>
+
+</body>
+</html>
